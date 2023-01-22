@@ -1,14 +1,18 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+mod arithmetization;
+use arithmetization::FoldedArithmetization;
+
+pub enum Error {}
+
+pub struct Prover<T, F: FoldedArithmetization<T>> {
+    folded: Vec<F>,
+    latest: T,
+    pc: u16,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn verify<T, F: FoldedArithmetization<T>>(
+    folded: Vec<F>,
+    latest: T,
+    pc: u16,
+) -> Result<bool, Error> {
+    unimplemented!()
 }
