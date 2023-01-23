@@ -3,4 +3,11 @@ pub mod r1cs;
 
 use std::ops::{Add, AddAssign};
 
-pub trait FoldedArithmetization<T>: Add<T> + AddAssign<T> + Default {}
+pub trait Arithmetization: Default + Clone {
+    fn is_satisfied(&self) -> bool;
+}
+
+pub trait FoldedArithmetization<A: Arithmetization>:
+    Add<A> + AddAssign<A> + Arithmetization
+{
+}
