@@ -3,26 +3,31 @@ use arithmetization::*;
 
 pub enum Error {}
 
-#[derive(Default, PartialEq, Eq)]
-pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>> {
-    folded: Vec<F>,
+pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> {
+    folded: [F; L],
     latest: A,
     pc: usize,
+    i: usize,
 }
 
-impl<A: Arithmetization, F: FoldedArithmetization<A>> Proof<A, F> {
-    /// Reinstantiate a SuperNova proof.
-    ///
-    /// NOTE: only to be used to continue an already active prover.
-    /// If you're starting from scratch, consider using [`Proof::default()`] instead.
-    pub fn new(folded: Vec<F>, latest: A, pc: usize) -> Self {
-        Self { folded, latest, pc }
+impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F, L> {
+    /// Instantiate a SuperNova proof by giving it the set of circuits
+    /// it should track..
+    pub fn new(folded: [F; L]) -> Self {
+        Self {
+            folded,
+            latest: A::default(),
+            pc: 0,
+            i: 0,
+        }
     }
 
+    /// Update a SuperNova proof with a new instance/witness pair.
     pub fn update(&mut self, next: A, pc: usize) {
         self.folded[self.pc] += self.latest.clone();
         self.latest = next;
         self.pc = pc;
+        self.i += 1;
         // TODO: set IO
     }
 }
@@ -30,9 +35,23 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>> Proof<A, F> {
 /// Verify a SuperNova proof.
 ///
 /// TODO: error verbosity
-pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>>(
-    proof: Proof<A, F>,
+pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
+    proof: Proof<A, F, L>,
 ) -> Result<bool, Error> {
+    // If this is only the first iteration, we can skip the other checks,
+    // as no computation has been folded.
+    if proof.i == 0 {
+        if proof.folded.iter().any(|pair| !pair.is_zero()) {
+            return Ok(false);
+        }
+
+        if !proof.latest.is_zero() {
+            return Ok(false);
+        }
+
+        return Ok(true);
+    }
+
     // TODO: Check that the public IO of the latest instance includes
     // the correct hash.
 
