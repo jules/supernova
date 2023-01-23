@@ -1,6 +1,7 @@
 pub mod plonk;
 pub mod r1cs;
 
+use halo2curves::bn256::Fr;
 use std::ops::{Add, AddAssign};
 
 pub trait Arithmetization: Default + Clone {
@@ -12,4 +13,5 @@ pub trait Arithmetization: Default + Clone {
 pub trait FoldedArithmetization<A: Arithmetization>:
     Add<A> + AddAssign<A> + Arithmetization
 {
+    fn digest(&self) -> Fr;
 }

@@ -1,7 +1,12 @@
 mod arithmetization;
 use arithmetization::*;
 
-pub enum Error {}
+use halo2curves::bn256::Fr;
+use poseidon::Poseidon;
+
+pub enum Error {
+    HashingError(String),
+}
 
 pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> {
     folded: [F; L],
@@ -28,9 +33,22 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
         self.latest = next;
         self.pc = pc;
         self.i += 1;
+        let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
+        poseidon.update(&[
+            /*vk,*/ Fr::from(self.i as u64),
+            Fr::from(self.pc as u64),
+            /*z0, z_{i+1},*/
+            self.folded
+                .iter()
+                .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
+        ]);
+        let x = poseidon.squeeze();
+
         // TODO: set IO
     }
 }
+
+pub struct Verifier {}
 
 /// Verify a SuperNova proof.
 ///
