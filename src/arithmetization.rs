@@ -8,6 +8,8 @@ pub trait Arithmetization: Default + Clone {
     fn is_satisfied(&self) -> bool;
 
     fn is_zero(&self) -> bool;
+
+    fn public_inputs(&self) -> &[Fr];
 }
 
 pub trait FoldedArithmetization<A: Arithmetization>:

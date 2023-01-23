@@ -70,8 +70,21 @@ pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
         return Ok(true);
     }
 
-    // TODO: Check that the public IO of the latest instance includes
+    // Check that the public IO of the latest instance includes
     // the correct hash.
+    let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
+    poseidon.update(&[
+        /*vk,*/ Fr::from(proof.i as u64),
+        Fr::from(proof.pc as u64),
+        /*z0, z_{i},*/
+        proof
+            .folded
+            .iter()
+            .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
+    ]);
+    if proof.latest.public_inputs()[0] != poseidon.squeeze() {
+        return Ok(false);
+    }
 
     // Ensure PC is within range.
     if proof.pc > proof.folded.len() {
