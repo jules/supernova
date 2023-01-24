@@ -8,6 +8,9 @@ pub enum Error {
     HashingError(String),
 }
 
+/// A SuperNova proof, which keeps track of a variable amount of loose circuits,
+/// a most recent instance-witness pair, a program counter and the iteration
+/// that the proof is currently at.
 pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> {
     folded: [F; L],
     latest: A,
@@ -50,6 +53,10 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
     }
 }
 
+/// Anb instantiation of a SuperNova verifier for a specific set of
+/// circuit parameters.
+///
+/// NOTE: may be redundant, the proof already contains the parameters.
 pub struct Verifier<const L: usize> {
     params: [Fr; L],
 }
