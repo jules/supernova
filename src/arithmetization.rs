@@ -10,6 +10,12 @@ pub trait Arithmetization: Default + Clone {
     fn is_zero(&self) -> bool;
 
     fn public_inputs(&self) -> &[Fr];
+
+    fn params(&self) -> Fr;
+
+    fn push_hash(&mut self, x: Fr);
+
+    fn has_crossterms(&self) -> bool;
 }
 
 pub trait FoldedArithmetization<A: Arithmetization>:

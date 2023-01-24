@@ -35,7 +35,10 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
         self.i += 1;
         let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
         poseidon.update(&[
-            /*vk,*/ Fr::from(self.i as u64),
+            self.folded
+                .iter()
+                .fold(Fr::zero(), |acc, pair| acc + pair.params()),
+            Fr::from(self.i as u64),
             Fr::from(self.pc as u64),
             /*z0, z_{i+1},*/
             self.folded
@@ -43,66 +46,81 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
                 .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
         ]);
         let x = poseidon.squeeze();
-
-        // TODO: set IO
+        self.latest.push_hash(x);
     }
 }
 
-pub struct Verifier {}
+pub struct Verifier<const L: usize> {
+    params: [Fr; L],
+}
 
-/// Verify a SuperNova proof.
-///
-/// TODO: error verbosity
-pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
-    proof: Proof<A, F, L>,
-) -> Result<bool, Error> {
-    // If this is only the first iteration, we can skip the other checks,
-    // as no computation has been folded.
-    if proof.i == 0 {
-        if proof.folded.iter().any(|pair| !pair.is_zero()) {
+impl<const L: usize> Verifier<L> {
+    /// Instantiate a new SuperNova verifier with the given verifier keys.
+    pub fn new(params: [Fr; L]) -> Self {
+        Self { params }
+    }
+
+    /// Verify a SuperNova proof.
+    ///
+    /// TODO: error verbosity
+    pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const PL: usize>(
+        &self,
+        proof: Proof<A, F, PL>,
+    ) -> Result<bool, Error> {
+        // If this is only the first iteration, we can skip the other checks,
+        // as no computation has been folded.
+        if proof.i == 0 {
+            if proof.folded.iter().any(|pair| !pair.is_zero()) {
+                return Ok(false);
+            }
+
+            if !proof.latest.is_zero() {
+                return Ok(false);
+            }
+
+            return Ok(true);
+        }
+
+        // Check that the public IO of the latest instance includes
+        // the correct hash.
+        let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
+        poseidon.update(&[
+            self.params
+                .iter()
+                .fold(Fr::zero(), |acc, params| acc + params),
+            Fr::from(proof.i as u64),
+            Fr::from(proof.pc as u64),
+            /*z0, z_{i},*/
+            proof
+                .folded
+                .iter()
+                .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
+        ]);
+        if proof.latest.public_inputs()[0] != poseidon.squeeze() {
             return Ok(false);
         }
 
-        if !proof.latest.is_zero() {
+        // Ensure PC is within range.
+        if proof.pc > proof.folded.len() {
             return Ok(false);
         }
 
-        return Ok(true);
+        // Ensure the latest instance has no crossterms.
+        if proof.latest.has_crossterms() {
+            return Ok(false);
+        }
+
+        // Ensure all folded instance/witness pairs are satisfied.
+        if proof.folded.iter().any(|pair| !pair.is_satisfied()) {
+            return Ok(false);
+        }
+
+        // Ensure the latest instance/witness pair is satisfied.
+        if !proof.latest.is_satisfied() {
+            return Ok(false);
+        }
+
+        todo!();
+        Ok(true)
     }
-
-    // Check that the public IO of the latest instance includes
-    // the correct hash.
-    let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
-    poseidon.update(&[
-        /*vk,*/ Fr::from(proof.i as u64),
-        Fr::from(proof.pc as u64),
-        /*z0, z_{i},*/
-        proof
-            .folded
-            .iter()
-            .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
-    ]);
-    if proof.latest.public_inputs()[0] != poseidon.squeeze() {
-        return Ok(false);
-    }
-
-    // Ensure PC is within range.
-    if proof.pc > proof.folded.len() {
-        return Ok(false);
-    }
-
-    // TODO: Ensure the latest instance has no crossterms.
-
-    // Ensure all folded instance/witness pairs are satisfied.
-    if proof.folded.iter().any(|pair| !pair.is_satisfied()) {
-        return Ok(false);
-    }
-
-    // Ensure the latest instance/witness pair is satisfied.
-    if !proof.latest.is_satisfied() {
-        return Ok(false);
-    }
-
-    todo!();
-    Ok(true)
 }
