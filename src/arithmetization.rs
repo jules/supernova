@@ -30,6 +30,9 @@ pub trait Arithmetization: Default + Clone {
     // Returns a set of base case inputs. Should in all cases just return
     // as many zero scalars as there are inputs.
     fn z0(&self) -> Vec<Fr>;
+
+    // Returns the list of all inputs to the corresponding arithmetization.
+    fn inputs(&self) -> Vec<Fr>;
 }
 
 /// A circuit which contains 2 or more instantiations folded into itself.

@@ -46,7 +46,7 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
             .chain([Fr::from(self.i as u64)])
             .chain([Fr::from(self.pc as u64)])
             .chain(self.latest.z0())
-            /*z_{i+1},*/
+            .chain(self.latest.inputs())
             .chain(
                 [self
                     .folded
@@ -109,7 +109,7 @@ impl<const L: usize> Verifier<L> {
             .chain([Fr::from(proof.i as u64)])
             .chain([Fr::from(proof.pc as u64)])
             .chain(proof.latest.z0())
-            /*z_{i+1},*/
+            .chain(proof.latest.inputs())
             .chain(
                 [proof
                     .folded
