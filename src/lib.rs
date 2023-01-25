@@ -5,7 +5,11 @@ use halo2curves::bn256::Fr;
 use poseidon::Poseidon;
 
 pub enum Error {
-    HashingError(String),
+    ExpectedBaseCase,
+    HashMismatch,
+    PCOutOfRange,
+    UnexpectedCrossterms,
+    UnsatisfiedCircuit,
 }
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
@@ -77,24 +81,22 @@ impl<const L: usize> Verifier<L> {
     }
 
     /// Verify a SuperNova proof.
-    ///
-    /// TODO: error verbosity
     pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const PL: usize>(
         &self,
         proof: Proof<A, F, PL>,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         // If this is only the first iteration, we can skip the other checks,
         // as no computation has been folded.
         if proof.i == 0 {
             if proof.folded.iter().any(|pair| !pair.is_zero()) {
-                return Ok(false);
+                return Err(Error::ExpectedBaseCase);
             }
 
             if !proof.latest.is_zero() {
-                return Ok(false);
+                return Err(Error::ExpectedBaseCase);
             }
 
-            return Ok(true);
+            return Ok(());
         }
 
         // Check that the public IO of the latest instance includes
@@ -121,30 +123,29 @@ impl<const L: usize> Verifier<L> {
             .as_slice(),
         );
         if proof.latest.public_inputs()[0] != poseidon.squeeze() {
-            return Ok(false);
+            return Err(Error::HashMismatch);
         }
 
         // Ensure PC is within range.
         if proof.pc > proof.folded.len() {
-            return Ok(false);
+            return Err(Error::PCOutOfRange);
         }
 
         // Ensure the latest instance has no crossterms.
         if proof.latest.has_crossterms() {
-            return Ok(false);
+            return Err(Error::UnexpectedCrossterms);
         }
 
         // Ensure all folded instance/witness pairs are satisfied.
         if proof.folded.iter().any(|pair| !pair.is_satisfied()) {
-            return Ok(false);
+            return Err(Error::UnsatisfiedCircuit);
         }
 
         // Ensure the latest instance/witness pair is satisfied.
         if !proof.latest.is_satisfied() {
-            return Ok(false);
+            return Err(Error::UnsatisfiedCircuit);
         }
 
-        todo!();
-        Ok(true)
+        Ok(())
     }
 }
