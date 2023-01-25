@@ -8,7 +8,7 @@ This repository contains an implementation of the [SuperNova](https://eprint.iac
 
 - [ ] R1CS arithmetization
 - [ ] Vanilla Plonk arithmetization
-- [ ] Prover/verifier construction
+- [x] Prover/verifier construction
 - [ ] Tests
 
 Optimizations TBD
