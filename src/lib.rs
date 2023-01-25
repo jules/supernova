@@ -24,7 +24,7 @@ pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize
 
 impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
-    /// it should track..
+    /// it should track.
     pub fn new(folded: [F; L]) -> Self {
         Self {
             folded,
