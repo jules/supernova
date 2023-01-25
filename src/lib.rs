@@ -1,16 +1,10 @@
 mod arithmetization;
 use arithmetization::*;
+mod errors;
+use errors::VerificationError;
 
 use halo2curves::bn256::Fr;
 use poseidon::Poseidon;
-
-pub enum Error {
-    ExpectedBaseCase,
-    HashMismatch,
-    PCOutOfRange,
-    UnexpectedCrossterms,
-    UnsatisfiedCircuit,
-}
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
@@ -84,16 +78,16 @@ impl<const L: usize> Verifier<L> {
     pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const PL: usize>(
         &self,
         proof: Proof<A, F, PL>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), VerificationError> {
         // If this is only the first iteration, we can skip the other checks,
         // as no computation has been folded.
         if proof.i == 0 {
             if proof.folded.iter().any(|pair| !pair.is_zero()) {
-                return Err(Error::ExpectedBaseCase);
+                return Err(VerificationError::ExpectedBaseCase);
             }
 
             if !proof.latest.is_zero() {
-                return Err(Error::ExpectedBaseCase);
+                return Err(VerificationError::ExpectedBaseCase);
             }
 
             return Ok(());
@@ -122,28 +116,35 @@ impl<const L: usize> Verifier<L> {
             .collect::<Vec<Fr>>()
             .as_slice(),
         );
-        if proof.latest.public_inputs()[0] != poseidon.squeeze() {
-            return Err(Error::HashMismatch);
+        let hash = poseidon.squeeze();
+        if proof.latest.public_inputs()[0] != hash {
+            return Err(VerificationError::HashMismatch(
+                hash,
+                proof.latest.public_inputs()[0],
+            ));
         }
 
         // Ensure PC is within range.
         if proof.pc > proof.folded.len() {
-            return Err(Error::PCOutOfRange);
+            return Err(VerificationError::PCOutOfRange(
+                proof.pc,
+                proof.folded.len(),
+            ));
         }
 
         // Ensure the latest instance has no crossterms.
         if proof.latest.has_crossterms() {
-            return Err(Error::UnexpectedCrossterms);
+            return Err(VerificationError::UnexpectedCrossterms);
         }
 
         // Ensure all folded instance/witness pairs are satisfied.
         if proof.folded.iter().any(|pair| !pair.is_satisfied()) {
-            return Err(Error::UnsatisfiedCircuit);
+            return Err(VerificationError::UnsatisfiedCircuit);
         }
 
         // Ensure the latest instance/witness pair is satisfied.
         if !proof.latest.is_satisfied() {
-            return Err(Error::UnsatisfiedCircuit);
+            return Err(VerificationError::UnsatisfiedCircuit);
         }
 
         Ok(())
