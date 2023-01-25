@@ -26,6 +26,10 @@ pub trait Arithmetization: Default + Clone {
 
     // Ensures that the arithmetization hasn't been folded yet.
     fn has_crossterms(&self) -> bool;
+
+    // Returns a set of base case inputs. Should in all cases just return
+    // as many zero scalars as there are inputs.
+    fn z0(&self) -> Vec<Fr>;
 }
 
 /// A circuit which contains 2 or more instantiations folded into itself.

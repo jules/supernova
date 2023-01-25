@@ -37,17 +37,26 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
         self.pc = pc;
         self.i += 1;
         let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
-        poseidon.update(&[
-            self.folded
+        poseidon.update(
+            [self
+                .folded
                 .iter()
-                .fold(Fr::zero(), |acc, pair| acc + pair.params()),
-            Fr::from(self.i as u64),
-            Fr::from(self.pc as u64),
-            /*z0, z_{i+1},*/
-            self.folded
-                .iter()
-                .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
-        ]);
+                .fold(Fr::zero(), |acc, pair| acc + pair.params())]
+            .into_iter()
+            .chain([Fr::from(self.i as u64)])
+            .chain([Fr::from(self.pc as u64)])
+            .chain(self.latest.z0())
+            /*z_{i+1},*/
+            .chain(
+                [self
+                    .folded
+                    .iter()
+                    .fold(Fr::zero(), |acc, pair| acc + pair.digest())]
+                .into_iter(),
+            )
+            .collect::<Vec<Fr>>()
+            .as_slice(),
+        );
         let x = poseidon.squeeze();
         self.latest.push_hash(x);
     }
@@ -91,18 +100,26 @@ impl<const L: usize> Verifier<L> {
         // Check that the public IO of the latest instance includes
         // the correct hash.
         let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
-        poseidon.update(&[
-            self.params
+        poseidon.update(
+            [self
+                .params
                 .iter()
-                .fold(Fr::zero(), |acc, params| acc + params),
-            Fr::from(proof.i as u64),
-            Fr::from(proof.pc as u64),
-            /*z0, z_{i},*/
-            proof
-                .folded
-                .iter()
-                .fold(Fr::zero(), |acc, pair| acc + pair.digest()),
-        ]);
+                .fold(Fr::zero(), |acc, params| acc + params)]
+            .into_iter()
+            .chain([Fr::from(proof.i as u64)])
+            .chain([Fr::from(proof.pc as u64)])
+            .chain(proof.latest.z0())
+            /*z_{i+1},*/
+            .chain(
+                [proof
+                    .folded
+                    .iter()
+                    .fold(Fr::zero(), |acc, pair| acc + pair.digest())]
+                .into_iter(),
+            )
+            .collect::<Vec<Fr>>()
+            .as_slice(),
+        );
         if proof.latest.public_inputs()[0] != poseidon.squeeze() {
             return Ok(false);
         }
