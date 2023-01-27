@@ -1,4 +1,5 @@
-use crate::Arithmetization;
+use crate::{Arithmetization, FoldedArithmetization};
+use core::ops::{Add, AddAssign};
 use halo2curves::FieldExt;
 
 #[derive(Clone, Default)]
@@ -47,6 +48,30 @@ impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
 
     // TODO
     fn inputs(&self) -> Vec<S> {
+        todo!()
+    }
+}
+
+impl<S: FieldExt> FoldedArithmetization<S, R1CS<S>> for R1CS<S> {
+    // TODO
+    fn digest(&self) -> S {
+        todo!()
+    }
+}
+
+impl<S: FieldExt> Add<R1CS<S>> for R1CS<S> {
+    type Output = Self;
+
+    // TODO
+    fn add(mut self, other: Self) -> Self {
+        self += other;
+        self
+    }
+}
+
+impl<S: FieldExt> AddAssign<R1CS<S>> for R1CS<S> {
+    // TODO
+    fn add_assign(&mut self, other: Self) {
         todo!()
     }
 }

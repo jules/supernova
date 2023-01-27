@@ -1,8 +1,8 @@
 pub mod plonk;
 pub mod r1cs;
 
+use core::ops::{Add, AddAssign};
 use halo2curves::FieldExt;
-use std::ops::{Add, AddAssign};
 
 /// A standalone circuit, to be folded later.
 pub trait Arithmetization<S: FieldExt>: Default + Clone {
