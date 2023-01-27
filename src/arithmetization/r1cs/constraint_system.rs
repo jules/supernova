@@ -2,17 +2,10 @@
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
 
 use super::R1CS;
-use bellman::{
-    multiexp::DensityTracker, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable,
-};
+use bellman::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
 use halo2curves::FieldExt;
 
 pub struct ProvingAssignment<S: FieldExt> {
-    // Density of queries
-    a_aux_density: DensityTracker,
-    b_input_density: DensityTracker,
-    b_aux_density: DensityTracker,
-
     // Evaluations of A, B, C polynomials
     a: Vec<LinearCombination<S>>,
     b: Vec<LinearCombination<S>>,
@@ -49,6 +42,8 @@ impl<S: FieldExt> ProvingAssignment<S> {
             A: eval_matrix(&self.a),
             B: eval_matrix(&self.b),
             C: eval_matrix(&self.c),
+            witness: self.aux_assignment.clone(),
+            instance: self.input_assignment.clone()[1..].to_vec(),
         }
     }
 }
@@ -63,8 +58,6 @@ impl<S: FieldExt> ConstraintSystem<S> for ProvingAssignment<S> {
         AR: Into<String>,
     {
         self.aux_assignment.push(f()?);
-        self.a_aux_density.add_element();
-        self.b_aux_density.add_element();
 
         Ok(Variable::new_unchecked(Index::Aux(
             self.aux_assignment.len() - 1,
@@ -78,7 +71,6 @@ impl<S: FieldExt> ConstraintSystem<S> for ProvingAssignment<S> {
         AR: Into<String>,
     {
         self.input_assignment.push(f()?);
-        self.b_input_density.add_element();
 
         Ok(Variable::new_unchecked(Index::Input(
             self.input_assignment.len() - 1,

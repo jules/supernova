@@ -10,6 +10,8 @@ pub struct R1CS<S: FieldExt> {
     pub(crate) A: Vec<Vec<S>>,
     pub(crate) B: Vec<Vec<S>>,
     pub(crate) C: Vec<Vec<S>>,
+    pub(crate) witness: Vec<S>,
+    pub(crate) instance: Vec<S>,
 }
 
 impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
