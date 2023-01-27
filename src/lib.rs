@@ -17,24 +17,24 @@ use poseidon::Poseidon;
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
 pub struct Proof<
-    Scalar: FieldExt,
-    A: Arithmetization<Scalar>,
-    F: FoldedArithmetization<Scalar, A>,
+    S: FieldExt,
+    A: Arithmetization<S>,
+    F: FoldedArithmetization<S, A>,
     const L: usize,
 > {
     folded: [F; L],
     latest: A,
     pc: usize,
     i: usize,
-    _p: PhantomData<Scalar>,
+    _p: PhantomData<S>,
 }
 
 impl<
-        Scalar: FieldExt,
-        A: Arithmetization<Scalar>,
-        F: FoldedArithmetization<Scalar, A>,
+        S: FieldExt,
+        A: Arithmetization<S>,
+        F: FoldedArithmetization<S, A>,
         const L: usize,
-    > Proof<Scalar, A, F, L>
+    > Proof<S, A, F, L>
 {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
@@ -66,13 +66,13 @@ impl<
 
 /// Verify a SuperNova proof.
 pub fn verify<
-    Scalar: FieldExt,
-    A: Arithmetization<Scalar>,
-    F: FoldedArithmetization<Scalar, A>,
+    S: FieldExt,
+    A: Arithmetization<S>,
+    F: FoldedArithmetization<S, A>,
     const L: usize,
 >(
-    proof: Proof<Scalar, A, F, L>,
-) -> Result<(), VerificationError<Scalar>> {
+    proof: Proof<S, A, F, L>,
+) -> Result<(), VerificationError<S>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -130,34 +130,34 @@ pub fn verify<
 }
 
 fn hash_public_io<
-    Scalar: FieldExt,
-    A: Arithmetization<Scalar>,
-    F: FoldedArithmetization<Scalar, A>,
+    S: FieldExt,
+    A: Arithmetization<S>,
+    F: FoldedArithmetization<S, A>,
     const L: usize,
 >(
     folded: [F; L],
     i: usize,
     pc: usize,
-    z0: Vec<Scalar>,
-    inputs: Vec<Scalar>,
-) -> Scalar {
-    let mut poseidon: Poseidon<Scalar, 5, 4> = Poseidon::new(8, 5);
+    z0: Vec<S>,
+    inputs: Vec<S>,
+) -> S {
+    let mut poseidon: Poseidon<S, 5, 4> = Poseidon::new(8, 5);
     poseidon.update(
         [folded
             .iter()
-            .fold(Scalar::zero(), |acc, pair| acc + pair.params())]
+            .fold(S::zero(), |acc, pair| acc + pair.params())]
         .into_iter()
-        .chain([Scalar::from(i as u64)])
-        .chain([Scalar::from(pc as u64)])
+        .chain([S::from(i as u64)])
+        .chain([S::from(pc as u64)])
         .chain(z0)
         .chain(inputs)
         .chain(
             [folded
                 .iter()
-                .fold(Scalar::zero(), |acc, pair| acc + pair.digest())]
+                .fold(S::zero(), |acc, pair| acc + pair.digest())]
             .into_iter(),
         )
-        .collect::<Vec<Scalar>>()
+        .collect::<Vec<S>>()
         .as_slice(),
     );
     poseidon.squeeze()

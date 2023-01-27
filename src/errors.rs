@@ -3,15 +3,15 @@ use std::fmt::{Display, Formatter, Result};
 
 /// A list of possible errors that can occur during proof verification.
 #[derive(Debug)]
-pub enum VerificationError<Scalar: FieldExt> {
+pub enum VerificationError<S: FieldExt> {
     ExpectedBaseCase,
-    HashMismatch(Scalar, Scalar),
+    HashMismatch(S, S),
     PCOutOfRange(usize, usize),
     UnexpectedCrossterms,
     UnsatisfiedCircuit,
 }
 
-impl<Scalar: FieldExt> Display for VerificationError<Scalar> {
+impl<S: FieldExt> Display for VerificationError<S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             VerificationError::ExpectedBaseCase => write!(f, "ERROR: expected base case"),
