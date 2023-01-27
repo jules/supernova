@@ -1,17 +1,17 @@
-use halo2curves::bn256::Fr;
+use halo2curves::FieldExt;
 use std::fmt::{Display, Formatter, Result};
 
 /// A list of possible errors that can occur during proof verification.
 #[derive(Debug)]
-pub enum VerificationError {
+pub enum VerificationError<Scalar: FieldExt> {
     ExpectedBaseCase,
-    HashMismatch(Fr, Fr),
+    HashMismatch(Scalar, Scalar),
     PCOutOfRange(usize, usize),
     UnexpectedCrossterms,
     UnsatisfiedCircuit,
 }
 
-impl Display for VerificationError {
+impl<Scalar: FieldExt> Display for VerificationError<Scalar> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             VerificationError::ExpectedBaseCase => write!(f, "ERROR: expected base case"),

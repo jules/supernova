@@ -9,20 +9,33 @@ use arithmetization::*;
 mod errors;
 use errors::VerificationError;
 
-use halo2curves::bn256::Fr;
+use core::marker::PhantomData;
+use halo2curves::FieldExt;
 use poseidon::Poseidon;
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
-pub struct Proof<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> {
+pub struct Proof<
+    Scalar: FieldExt,
+    A: Arithmetization<Scalar>,
+    F: FoldedArithmetization<Scalar, A>,
+    const L: usize,
+> {
     folded: [F; L],
     latest: A,
     pc: usize,
     i: usize,
+    _p: PhantomData<Scalar>,
 }
 
-impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F, L> {
+impl<
+        Scalar: FieldExt,
+        A: Arithmetization<Scalar>,
+        F: FoldedArithmetization<Scalar, A>,
+        const L: usize,
+    > Proof<Scalar, A, F, L>
+{
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
     pub fn new(folded: [F; L]) -> Self {
@@ -31,6 +44,7 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
             latest: A::default(),
             pc: 0,
             i: 0,
+            _p: Default::default(),
         }
     }
 
@@ -41,7 +55,7 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
         self.pc = pc;
         self.i += 1;
         self.latest.push_hash(hash_public_io(
-            self.folded,
+            self.folded.clone(),
             self.i,
             self.pc,
             self.latest.z0(),
@@ -51,9 +65,14 @@ impl<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize> Proof<A, F
 }
 
 /// Verify a SuperNova proof.
-pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
-    proof: Proof<A, F, L>,
-) -> Result<(), VerificationError> {
+pub fn verify<
+    Scalar: FieldExt,
+    A: Arithmetization<Scalar>,
+    F: FoldedArithmetization<Scalar, A>,
+    const L: usize,
+>(
+    proof: Proof<Scalar, A, F, L>,
+) -> Result<(), VerificationError<Scalar>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -71,7 +90,7 @@ pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
     // Check that the public IO of the latest instance includes
     // the correct hash.
     let hash = hash_public_io(
-        proof.folded,
+        proof.folded.clone(),
         proof.i,
         proof.pc,
         proof.latest.z0(),
@@ -110,30 +129,35 @@ pub fn verify<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
     Ok(())
 }
 
-fn hash_public_io<A: Arithmetization, F: FoldedArithmetization<A>, const L: usize>(
+fn hash_public_io<
+    Scalar: FieldExt,
+    A: Arithmetization<Scalar>,
+    F: FoldedArithmetization<Scalar, A>,
+    const L: usize,
+>(
     folded: [F; L],
     i: usize,
     pc: usize,
-    z0: Vec<Fr>,
-    inputs: Vec<Fr>,
-) -> Fr {
-    let mut poseidon: Poseidon<Fr, 5, 4> = Poseidon::new(8, 5);
+    z0: Vec<Scalar>,
+    inputs: Vec<Scalar>,
+) -> Scalar {
+    let mut poseidon: Poseidon<Scalar, 5, 4> = Poseidon::new(8, 5);
     poseidon.update(
         [folded
             .iter()
-            .fold(Fr::zero(), |acc, pair| acc + pair.params())]
+            .fold(Scalar::zero(), |acc, pair| acc + pair.params())]
         .into_iter()
-        .chain([Fr::from(i as u64)])
-        .chain([Fr::from(pc as u64)])
+        .chain([Scalar::from(i as u64)])
+        .chain([Scalar::from(pc as u64)])
         .chain(z0)
         .chain(inputs)
         .chain(
             [folded
                 .iter()
-                .fold(Fr::zero(), |acc, pair| acc + pair.digest())]
+                .fold(Scalar::zero(), |acc, pair| acc + pair.digest())]
             .into_iter(),
         )
-        .collect::<Vec<Fr>>()
+        .collect::<Vec<Scalar>>()
         .as_slice(),
     );
     poseidon.squeeze()
