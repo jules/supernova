@@ -25,9 +25,8 @@ impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
         false
     }
 
-    // TODO
     fn public_inputs(&self) -> &[S] {
-        todo!()
+        &self.instance
     }
 
     fn params(&self) -> S {
@@ -48,9 +47,10 @@ impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
         vec![S::zero(); self.num_public_inputs]
     }
 
-    // TODO
     fn inputs(&self) -> Vec<S> {
-        todo!()
+        let mut inputs = self.witness.clone();
+        inputs.extend(self.instance.clone());
+        inputs
     }
 }
 
