@@ -6,42 +6,37 @@
 
 mod arithmetization;
 use arithmetization::*;
+mod commitment;
+pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
 use core::marker::PhantomData;
-use halo2curves::FieldExt;
+use group::ff::Field;
+use halo2curves::CurveExt;
 use poseidon::Poseidon;
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
-pub struct Proof<
-    S: FieldExt,
-    A: Arithmetization<S>,
-    F: FoldedArithmetization<S, A>,
-    const L: usize,
-> {
+pub struct Proof<G: CurveExt, A: Arithmetization<G>, F: FoldedArithmetization<G, A>, const L: usize>
+{
     folded: [F; L],
     latest: A,
     pc: usize,
     i: usize,
-    _p: PhantomData<S>,
+    _p: PhantomData<G>,
 }
 
-impl<
-        S: FieldExt,
-        A: Arithmetization<S>,
-        F: FoldedArithmetization<S, A>,
-        const L: usize,
-    > Proof<S, A, F, L>
+impl<G: CurveExt, A: Arithmetization<G>, F: FoldedArithmetization<G, A>, const L: usize>
+    Proof<G, A, F, L>
 {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
-    pub fn new(folded: [F; L]) -> Self {
+    pub fn new(folded: [F; L], latest: A) -> Self {
         Self {
             folded,
-            latest: A::default(),
+            latest,
             pc: 0,
             i: 0,
             _p: Default::default(),
@@ -59,20 +54,20 @@ impl<
             self.i,
             self.pc,
             self.latest.z0(),
-            self.latest.inputs(),
+            self.latest.public_inputs(),
         ));
     }
 }
 
 /// Verify a SuperNova proof.
 pub fn verify<
-    S: FieldExt,
-    A: Arithmetization<S>,
-    F: FoldedArithmetization<S, A>,
+    G: CurveExt,
+    A: Arithmetization<G>,
+    F: FoldedArithmetization<G, A>,
     const L: usize,
 >(
-    proof: Proof<S, A, F, L>,
-) -> Result<(), VerificationError<S>> {
+    proof: Proof<G, A, F, L>,
+) -> Result<(), VerificationError<G::ScalarExt>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -94,7 +89,7 @@ pub fn verify<
         proof.i,
         proof.pc,
         proof.latest.z0(),
-        proof.latest.inputs(),
+        proof.latest.public_inputs(),
     );
     if proof.latest.public_inputs()[0] != hash {
         return Err(VerificationError::HashMismatch(
@@ -130,35 +125,35 @@ pub fn verify<
 }
 
 fn hash_public_io<
-    S: FieldExt,
-    A: Arithmetization<S>,
-    F: FoldedArithmetization<S, A>,
+    G: CurveExt,
+    A: Arithmetization<G>,
+    F: FoldedArithmetization<G, A>,
     const L: usize,
 >(
     folded: [F; L],
     i: usize,
     pc: usize,
-    z0: Vec<S>,
-    inputs: Vec<S>,
-) -> S {
-    let mut poseidon: Poseidon<S, 5, 4> = Poseidon::new(8, 5);
+    z0: Vec<G::ScalarExt>,
+    inputs: &[G::ScalarExt],
+) -> G::ScalarExt {
+    // TODO: validate parameters
+    let mut poseidon: Poseidon<G::ScalarExt, 5, 4> = Poseidon::new(8, 5);
     poseidon.update(
-        [folded
+        &[folded
             .iter()
-            .fold(S::zero(), |acc, pair| acc + pair.params())]
+            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
         .into_iter()
-        .chain([S::from(i as u64)])
-        .chain([S::from(pc as u64)])
+        .chain([G::ScalarExt::from(i as u64)])
+        .chain([G::ScalarExt::from(pc as u64)])
         .chain(z0)
-        .chain(inputs)
+        .chain(inputs.to_vec())
         .chain(
             [folded
                 .iter()
-                .fold(S::zero(), |acc, pair| acc + pair.digest())]
+                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
             .into_iter(),
         )
-        .collect::<Vec<S>>()
-        .as_slice(),
+        .collect::<Vec<G::ScalarExt>>(),
     );
     poseidon.squeeze()
 }

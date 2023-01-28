@@ -1,9 +1,9 @@
-use halo2curves::FieldExt;
+use group::ff::PrimeField;
 use std::fmt::{Display, Formatter, Result};
 
 /// A list of possible errors that can occur during proof verification.
 #[derive(Debug)]
-pub enum VerificationError<S: FieldExt> {
+pub enum VerificationError<S: PrimeField> {
     ExpectedBaseCase,
     HashMismatch(S, S),
     PCOutOfRange(usize, usize),
@@ -11,7 +11,7 @@ pub enum VerificationError<S: FieldExt> {
     UnsatisfiedCircuit,
 }
 
-impl<S: FieldExt> Display for VerificationError<S> {
+impl<S: PrimeField> Display for VerificationError<S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             VerificationError::ExpectedBaseCase => write!(f, "ERROR: expected base case"),

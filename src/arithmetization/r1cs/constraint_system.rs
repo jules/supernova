@@ -1,24 +1,24 @@
 // NOTE: Code taken largely from:
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
 
-use super::R1CS;
+use super::{CircuitShape, R1CS};
+use crate::commitment::commit;
 use bellman::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
-use halo2curves::FieldExt;
+use group::ff::Field;
+use halo2curves::CurveExt;
 
-pub struct ProvingAssignment<S: FieldExt> {
-    // Evaluations of A, B, C polynomials
-    a: Vec<LinearCombination<S>>,
-    b: Vec<LinearCombination<S>>,
-    c: Vec<LinearCombination<S>>,
+pub struct ProvingAssignment<G: CurveExt> {
+    a: Vec<LinearCombination<G::ScalarExt>>,
+    b: Vec<LinearCombination<G::ScalarExt>>,
+    c: Vec<LinearCombination<G::ScalarExt>>,
 
-    // Assignments of variables
-    input_assignment: Vec<S>,
-    aux_assignment: Vec<S>,
+    input_assignment: Vec<G::ScalarExt>,
+    aux_assignment: Vec<G::ScalarExt>,
 }
 
-impl<S: FieldExt> ProvingAssignment<S> {
-    pub fn create_shape(&self) -> R1CS<S> {
-        let eval_matrix = |m: &[LinearCombination<S>]| -> Vec<Vec<S>> {
+impl<G: CurveExt> ProvingAssignment<G> {
+    pub fn create_shape(&self, generators: Vec<G>) -> R1CS<G> {
+        let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
                 .map(|lc| {
                     let mut witnesses = vec![];
@@ -32,28 +32,32 @@ impl<S: FieldExt> ProvingAssignment<S> {
                     witnesses.extend(inputs);
                     witnesses
                 })
-                .collect::<Vec<Vec<S>>>()
+                .collect::<Vec<Vec<G::ScalarExt>>>()
         };
 
         R1CS {
-            num_consts: self.a.len(),
-            num_vars: self.aux_assignment.len(),
-            num_public_inputs: self.input_assignment.len(),
-            A: eval_matrix(&self.a),
-            B: eval_matrix(&self.b),
-            C: eval_matrix(&self.c),
-            witness: self.aux_assignment.clone(),
+            shape: CircuitShape {
+                num_consts: self.a.len(),
+                num_vars: self.aux_assignment.len(),
+                num_public_inputs: self.input_assignment.len(),
+                A: eval_matrix(&self.a),
+                B: eval_matrix(&self.b),
+                C: eval_matrix(&self.c),
+            },
+            comm_witness: commit(generators, &self.aux_assignment),
+            comm_E: G::identity(),
             instance: self.input_assignment.clone()[1..].to_vec(),
+            u: G::ScalarExt::one(),
         }
     }
 }
 
-impl<S: FieldExt> ConstraintSystem<S> for ProvingAssignment<S> {
+impl<G: CurveExt> ConstraintSystem<G::ScalarExt> for ProvingAssignment<G> {
     type Root = Self;
 
     fn alloc<F, A, AR>(&mut self, _: A, f: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<S, SynthesisError>,
+        F: FnOnce() -> Result<G::ScalarExt, SynthesisError>,
         A: FnOnce() -> AR,
         AR: Into<String>,
     {
@@ -66,7 +70,7 @@ impl<S: FieldExt> ConstraintSystem<S> for ProvingAssignment<S> {
 
     fn alloc_input<F, A, AR>(&mut self, _: A, f: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<S, SynthesisError>,
+        F: FnOnce() -> Result<G::ScalarExt, SynthesisError>,
         A: FnOnce() -> AR,
         AR: Into<String>,
     {
@@ -81,9 +85,9 @@ impl<S: FieldExt> ConstraintSystem<S> for ProvingAssignment<S> {
     where
         A: FnOnce() -> AR,
         AR: Into<String>,
-        LA: FnOnce(LinearCombination<S>) -> LinearCombination<S>,
-        LB: FnOnce(LinearCombination<S>) -> LinearCombination<S>,
-        LC: FnOnce(LinearCombination<S>) -> LinearCombination<S>,
+        LA: FnOnce(LinearCombination<G::ScalarExt>) -> LinearCombination<G::ScalarExt>,
+        LB: FnOnce(LinearCombination<G::ScalarExt>) -> LinearCombination<G::ScalarExt>,
+        LC: FnOnce(LinearCombination<G::ScalarExt>) -> LinearCombination<G::ScalarExt>,
     {
         let a = a(LinearCombination::zero());
         let b = b(LinearCombination::zero());

@@ -1,20 +1,28 @@
 use crate::{Arithmetization, FoldedArithmetization};
 use core::ops::{Add, AddAssign};
-use halo2curves::FieldExt;
+use group::ff::Field;
+use halo2curves::CurveExt;
 
-#[derive(Clone, Default)]
-pub struct R1CS<S: FieldExt> {
+#[derive(Clone)]
+pub struct CircuitShape<G: CurveExt> {
     pub(crate) num_consts: usize,
     pub(crate) num_vars: usize,
     pub(crate) num_public_inputs: usize,
-    pub(crate) A: Vec<Vec<S>>,
-    pub(crate) B: Vec<Vec<S>>,
-    pub(crate) C: Vec<Vec<S>>,
-    pub(crate) witness: Vec<S>,
-    pub(crate) instance: Vec<S>,
+    pub(crate) A: Vec<Vec<G::ScalarExt>>,
+    pub(crate) B: Vec<Vec<G::ScalarExt>>,
+    pub(crate) C: Vec<Vec<G::ScalarExt>>,
 }
 
-impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
+#[derive(Clone)]
+pub struct R1CS<G: CurveExt> {
+    pub(crate) shape: CircuitShape<G>,
+    pub(crate) comm_witness: G,
+    pub(crate) comm_E: G,
+    pub(crate) instance: Vec<G::ScalarExt>,
+    pub(crate) u: G::ScalarExt,
+}
+
+impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
     // TODO
     fn is_satisfied(&self) -> bool {
         false
@@ -25,16 +33,17 @@ impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
         false
     }
 
-    fn public_inputs(&self) -> &[S] {
+    fn public_inputs(&self) -> &[G::ScalarExt] {
         &self.instance
     }
 
-    fn params(&self) -> S {
-        S::from(self.A.len() as u64) + S::from(self.num_vars as u64)
+    fn params(&self) -> G::ScalarExt {
+        G::ScalarExt::from(self.shape.A.len() as u64)
+            + G::ScalarExt::from(self.shape.num_vars as u64)
     }
 
     // TODO
-    fn push_hash(&mut self, x: S) {
+    fn push_hash(&mut self, x: G::ScalarExt) {
         todo!()
     }
 
@@ -43,25 +52,19 @@ impl<S: FieldExt> Arithmetization<S> for R1CS<S> {
         false
     }
 
-    fn z0(&self) -> Vec<S> {
-        vec![S::zero(); self.num_public_inputs]
-    }
-
-    fn inputs(&self) -> Vec<S> {
-        let mut inputs = self.witness.clone();
-        inputs.extend(self.instance.clone());
-        inputs
+    fn z0(&self) -> Vec<G::ScalarExt> {
+        vec![G::ScalarExt::zero(); self.shape.num_public_inputs]
     }
 }
 
-impl<S: FieldExt> FoldedArithmetization<S, R1CS<S>> for R1CS<S> {
+impl<G: CurveExt> FoldedArithmetization<G, R1CS<G>> for R1CS<G> {
     // TODO
-    fn digest(&self) -> S {
+    fn digest(&self) -> G::ScalarExt {
         todo!()
     }
 }
 
-impl<S: FieldExt> Add<R1CS<S>> for R1CS<S> {
+impl<G: CurveExt> Add<R1CS<G>> for R1CS<G> {
     type Output = Self;
 
     // TODO
@@ -71,7 +74,7 @@ impl<S: FieldExt> Add<R1CS<S>> for R1CS<S> {
     }
 }
 
-impl<S: FieldExt> AddAssign<R1CS<S>> for R1CS<S> {
+impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
     // TODO
     fn add_assign(&mut self, other: Self) {
         todo!()
