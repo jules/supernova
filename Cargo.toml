@@ -9,6 +9,7 @@ edition = "2021"
 bellman = "0.13.1"
 group = "0.12"
 halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = '0.3.0' }
+itertools = "0.10.5"
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon" }
 rayon = "1.6.1"
 sha3 = "0.8.2"

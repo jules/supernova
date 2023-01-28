@@ -1,5 +1,9 @@
 // NOTE: Code taken largely from:
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
+//
+// This was done mostly (1) because we need to be able to expose the constraint system
+// in order to derive SuperNova structures for it, and (2) because we shouldn't evaluate
+// the linear combinations so that we can create the circuit shapes.
 
 use super::{CircuitShape, R1CS};
 use crate::commitment::commit;
@@ -17,7 +21,7 @@ pub struct ProvingAssignment<G: CurveExt> {
 }
 
 impl<G: CurveExt> ProvingAssignment<G> {
-    pub fn create_shape(&self, generators: Vec<G>) -> R1CS<G> {
+    pub fn create_shape(&self, generators: &[G]) -> R1CS<G> {
         let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
                 .map(|lc| {
@@ -44,8 +48,11 @@ impl<G: CurveExt> ProvingAssignment<G> {
                 B: eval_matrix(&self.b),
                 C: eval_matrix(&self.c),
             },
+            generators: generators.to_vec(),
             comm_witness: commit(generators, &self.aux_assignment),
             comm_E: G::identity(),
+            E: vec![G::ScalarExt::one(); self.a.len()],
+            witness: self.aux_assignment.clone(),
             instance: self.input_assignment.clone()[1..].to_vec(),
             u: G::ScalarExt::one(),
         }

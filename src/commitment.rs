@@ -20,7 +20,7 @@ pub fn create_generators<G: CurveExt<Repr = [u8; 32]>>(label: &'static [u8], n: 
     gens
 }
 
-pub fn commit<G: CurveExt>(generators: Vec<G>, scalars: &[G::ScalarExt]) -> G {
+pub fn commit<G: CurveExt>(generators: &[G], scalars: &[G::ScalarExt]) -> G {
     generators
         .par_iter()
         .zip_eq(scalars)
