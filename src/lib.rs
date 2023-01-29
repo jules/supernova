@@ -4,8 +4,8 @@
 
 #![allow(non_snake_case)]
 
-mod arithmetization;
-use arithmetization::*;
+pub mod arithmetization;
+pub use arithmetization::*;
 mod commitment;
 pub use commitment::*;
 mod errors;

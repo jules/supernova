@@ -41,7 +41,6 @@ impl<G: CurveExt> ProvingAssignment<G> {
 
         R1CS {
             shape: CircuitShape {
-                num_consts: self.a.len(),
                 num_vars: self.aux_assignment.len(),
                 num_public_inputs: self.input_assignment.len(),
                 A: eval_matrix(&self.a),

@@ -8,7 +8,6 @@ use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
-    pub(crate) num_consts: usize,
     pub(crate) num_vars: usize,
     pub(crate) num_public_inputs: usize,
     pub(crate) A: Vec<Vec<G::ScalarExt>>,
