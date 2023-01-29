@@ -126,9 +126,9 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
         false
     }
 
-    // TODO
     fn is_zero(&self) -> bool {
-        false
+        self.witness.iter().all(|v| (v.is_zero()).into())
+            && self.instance.iter().all(|v| (v.is_zero()).into())
     }
 
     fn public_inputs(&self) -> &[G::ScalarExt] {
@@ -145,9 +145,8 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
         todo!()
     }
 
-    // TODO
     fn has_crossterms(&self) -> bool {
-        false
+        self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != G::ScalarExt::one()
     }
 
     fn z0(&self) -> Vec<G::ScalarExt> {

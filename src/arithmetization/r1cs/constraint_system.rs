@@ -51,7 +51,7 @@ impl<G: CurveExt> ProvingAssignment<G> {
             generators: generators.to_vec(),
             comm_witness: commit(generators, &self.aux_assignment),
             comm_E: G::identity(),
-            E: vec![G::ScalarExt::one(); self.a.len()],
+            E: vec![G::ScalarExt::zero(); self.a.len()],
             witness: self.aux_assignment.clone(),
             instance: self.input_assignment.clone()[1..].to_vec(),
             u: G::ScalarExt::one(),
