@@ -1,3 +1,6 @@
+//! Defines the common functionality for any kind of program arithmetization to be used
+//! in the SuperNova protocol.
+
 pub mod plonk;
 pub mod r1cs;
 

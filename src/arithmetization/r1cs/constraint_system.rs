@@ -1,3 +1,7 @@
+//! Implementation of an R1CS constraint system, which generates the coefficient matrices
+//! and constructs the instance-witness vector when evaluating a circuit.
+//!
+//! Circuits are expected to follow methodology used in the bellman library.
 // NOTE: Code taken largely from:
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
 //

@@ -1,3 +1,5 @@
+//! Commitment logic used for the creation of committed circuit structures.
+
 use halo2curves::CurveExt;
 use rayon::prelude::*;
 use sha3::{
