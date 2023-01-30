@@ -167,9 +167,21 @@ impl<G: CurveExt> R1CS<G> {
 }
 
 impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
-    // TODO
     fn digest(&self) -> G::ScalarExt {
-        todo!()
+        let mut poseidon: Poseidon<G::Base, 5, 4> = Poseidon::new(8, 5);
+        let bases = vec![
+            self.comm_witness.jacobian_coordinates().0,
+            self.comm_witness.jacobian_coordinates().1,
+            self.comm_witness.jacobian_coordinates().2,
+        ];
+        poseidon.update(
+            bases
+                .into_iter()
+                .chain(self.witness.clone().into_iter().map(scalar_to_base::<G>))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        base_to_scalar::<G>(poseidon.squeeze())
     }
 
     // TODO
@@ -178,8 +190,8 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
     }
 
     fn is_zero(&self) -> bool {
-        self.witness.iter().all(|v| (v.is_zero()).into())
-            && self.instance.iter().all(|v| (v.is_zero()).into())
+        self.witness.iter().all(|v| v.is_zero().into())
+            && self.instance.iter().all(|v| v.is_zero().into())
     }
 
     fn public_inputs(&self) -> &[G::ScalarExt] {
@@ -231,4 +243,18 @@ impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
         self.comm_E += comm_T * r;
         self.u += r;
     }
+}
+
+fn scalar_to_base<G: CurveExt>(scalar: G::ScalarExt) -> G::Base {
+    let repr = scalar.to_repr();
+    let mut base_repr = <G::Base as PrimeField>::Repr::default();
+    base_repr.as_mut().copy_from_slice(repr.as_ref());
+    G::Base::from_repr(base_repr).unwrap()
+}
+
+fn base_to_scalar<G: CurveExt>(base: G::Base) -> G::ScalarExt {
+    let repr = base.to_repr();
+    let mut scalar_repr = <G::ScalarExt as PrimeField>::Repr::default();
+    scalar_repr.as_mut().copy_from_slice(repr.as_ref());
+    G::ScalarExt::from_repr(scalar_repr).unwrap()
 }
