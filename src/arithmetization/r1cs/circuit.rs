@@ -215,37 +215,30 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             return false;
         }
 
-        // verify if az * bz = u*cz + E
-        let res_eq: bool = {
-            let z = concat(vec![
-                self.witness.clone(),
-                vec![self.u],
-                self.instance.clone(),
-            ]);
-            let (az, bz, cz) = self.shape.multiply_vec(&z);
-            if az.len() != num_constraints
-                || bz.len() != num_constraints
-                || cz.len() != num_constraints
-            {
-                return false;
-            }
+        // Verify if az * bz = u*cz + E.
+        let z = concat(vec![
+            self.witness.clone(),
+            vec![self.u],
+            self.instance.clone(),
+        ]);
+        let (az, bz, cz) = self.shape.multiply_vec(&z);
+        if az.len() != num_constraints || bz.len() != num_constraints || cz.len() != num_constraints
+        {
+            return false;
+        }
 
-            (0..num_constraints)
-                .map(|i| usize::from(az[i] * bz[i] != self.u * cz[i] + self.E[i]))
-                .sum::<usize>()
-                == 0
-        };
+        if (0..num_constraints)
+            .map(|i| usize::from(az[i] * bz[i] != self.u * cz[i] + self.E[i]))
+            .sum::<usize>()
+            != 0
+        {
+            return false;
+        }
 
-        // verify if comm_E and comm_W are commitments to E and W
-        let res_comm: bool = {
-            let (comm_witness, comm_E) = rayon::join(
-                || commit(&self.generators, &self.witness),
-                || commit(&self.generators, &self.E),
-            );
-            self.comm_witness == comm_witness && self.comm_E == comm_E
-        };
-
-        res_eq && res_comm
+        // Verify if comm_E and comm_witness are commitments to E and witness.
+        let comm_witness = commit(&self.generators, &self.witness);
+        let comm_E = commit(&self.generators, &self.E);
+        self.comm_witness == comm_witness && self.comm_E == comm_E
     }
 
     fn is_zero(&self) -> bool {
