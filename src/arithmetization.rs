@@ -24,6 +24,9 @@ pub trait Arithmetization<G: Group>: Clone + Add<Self> + AddAssign<Self> {
     // Returns the circuit metadata used for hashing.
     fn params(&self) -> G::Scalar;
 
+    // Pushes a hash into the public IO of the circuit.
+    fn push_hash(&mut self, x: G::Scalar);
+
     // Ensures that the arithmetization hasn't been folded yet.
     fn has_crossterms(&self) -> bool;
 
