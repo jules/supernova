@@ -7,8 +7,11 @@ pub mod r1cs;
 use core::ops::{Add, AddAssign};
 use group::Group;
 
-/// A standalone circuit, to be folded later.
-pub trait Arithmetization<G: Group>: Clone {
+/// A foldable circuit representation.
+pub trait Arithmetization<G: Group>: Clone + Add<Self> + AddAssign<Self> {
+    // Returns a digest of the circuit.
+    fn digest(&self) -> G::Scalar;
+
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self) -> bool;
 
@@ -33,12 +36,4 @@ pub trait Arithmetization<G: Group>: Clone {
     // Returns a set of base case inputs. Should in all cases just return
     // as many zero scalars as there are inputs.
     fn z0(&self) -> Vec<G::Scalar>;
-}
-
-/// A circuit which contains 2 or more instantiations folded into itself.
-pub trait FoldedArithmetization<G: Group, A: Arithmetization<G>>:
-    Add<A> + AddAssign<A> + Arithmetization<G>
-{
-    // Returns a digest of the circuit.
-    fn digest(&self) -> G::Scalar;
 }

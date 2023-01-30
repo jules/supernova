@@ -6,8 +6,10 @@
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
 //
 // This was done mostly (1) because we need to be able to expose the constraint system
-// in order to derive SuperNova structures for it, and (2) because we shouldn't evaluate
-// the linear combinations so that we can create the circuit shapes.
+// in order to derive SuperNova structures for it, and bellman keeps this constraint system
+// internal, as it is accessed through higher-level proving functions, and (2) because we
+// shouldn't evaluate the linear combinations like it does in bellman so that we can create
+// the circuit shapes needed for the SuperNova protocol.
 
 use super::{CircuitShape, R1CS};
 use crate::commitment::commit;

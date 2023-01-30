@@ -1,6 +1,5 @@
 //! This library implements the SuperNova prover-verifier algorithm, and is generic
-//! over any kind of arithmetization, as long as it implements the [`Arithmetization`]
-//! and [`FoldedArithmetization`] traits.
+//! over any kind of arithmetization, as long as it implements the [`Arithmetization`] trait.
 
 #![allow(non_snake_case)]
 
@@ -19,21 +18,18 @@ use poseidon::Poseidon;
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
-pub struct Proof<G: CurveExt, A: Arithmetization<G>, F: FoldedArithmetization<G, A>, const L: usize>
-{
-    folded: [F; L],
+pub struct Proof<G: CurveExt, A: Arithmetization<G>, const L: usize> {
+    folded: [A; L],
     latest: A,
     pc: usize,
     i: usize,
     _p: PhantomData<G>,
 }
 
-impl<G: CurveExt, A: Arithmetization<G>, F: FoldedArithmetization<G, A>, const L: usize>
-    Proof<G, A, F, L>
-{
+impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
-    pub fn new(folded: [F; L], latest: A) -> Self {
+    pub fn new(folded: [A; L], latest: A) -> Self {
         Self {
             folded,
             latest,
@@ -60,13 +56,8 @@ impl<G: CurveExt, A: Arithmetization<G>, F: FoldedArithmetization<G, A>, const L
 }
 
 /// Verify a SuperNova proof.
-pub fn verify<
-    G: CurveExt,
-    A: Arithmetization<G>,
-    F: FoldedArithmetization<G, A>,
-    const L: usize,
->(
-    proof: Proof<G, A, F, L>,
+pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
+    proof: Proof<G, A, L>,
 ) -> Result<(), VerificationError<G::ScalarExt>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
@@ -124,13 +115,8 @@ pub fn verify<
     Ok(())
 }
 
-fn hash_public_io<
-    G: CurveExt,
-    A: Arithmetization<G>,
-    F: FoldedArithmetization<G, A>,
-    const L: usize,
->(
-    folded: [F; L],
+fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>(
+    folded: [A; L],
     i: usize,
     pc: usize,
     z0: Vec<G::ScalarExt>,
