@@ -217,7 +217,27 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             })
             .collect::<Vec<AllocatedNum<_>>>();
         let constants = PoseidonConstants::<_, U4>::new();
-        poseidon_hash_allocated(cs, elements, &constants).expect("should be able to hash");
+        poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
+            .expect("should be able to hash");
+
+        // TODO: ensure generators are okay
+        let mut hash_circuit = cs.create_circuit(&self.generators);
+        hash_circuit.shape.A.append(&mut self.shape.A);
+        hash_circuit.shape.B.append(&mut self.shape.B);
+        hash_circuit.shape.C.append(&mut self.shape.C);
+        self.shape.num_vars += hash_circuit.shape.num_vars;
+        self.shape.num_public_inputs += hash_circuit.shape.num_public_inputs;
+        self.shape.A = hash_circuit.shape.A;
+        self.shape.B = hash_circuit.shape.B;
+        self.shape.C = hash_circuit.shape.C;
+        self.comm_witness += hash_circuit.comm_witness;
+        self.comm_E += hash_circuit.comm_E;
+        hash_circuit.E.append(&mut self.E);
+        self.E = hash_circuit.E;
+        hash_circuit.witness.append(&mut self.witness);
+        self.witness = hash_circuit.witness;
+        hash_circuit.instance.append(&mut self.instance);
+        self.instance = hash_circuit.instance;
     }
 
     fn has_crossterms(&self) -> bool {
