@@ -167,7 +167,7 @@ impl<G: CurveExt> R1CS<G> {
         (t, comm_T)
     }
 
-    fn prepend(&mut self, other: &mut Self) {
+    fn prepend(&mut self, mut other: Self) {
         other.shape.A.append(&mut self.shape.A);
         other.shape.B.append(&mut self.shape.B);
         other.shape.C.append(&mut self.shape.C);
@@ -206,9 +206,46 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
         base_to_scalar::<G>(poseidon.hash())
     }
 
-    // TODO
     fn is_satisfied(&self) -> bool {
-        false
+        let num_constraints = self.shape.A.len();
+        if self.witness.len() != self.shape.num_vars
+            || self.E.len() != num_constraints
+            || self.instance.len() != self.shape.num_public_inputs
+        {
+            return false;
+        }
+
+        // verify if az * bz = u*cz + E
+        let res_eq: bool = {
+            let z = concat(vec![
+                self.witness.clone(),
+                vec![self.u],
+                self.instance.clone(),
+            ]);
+            let (az, bz, cz) = self.shape.multiply_vec(&z);
+            if az.len() != num_constraints
+                || bz.len() != num_constraints
+                || cz.len() != num_constraints
+            {
+                return false;
+            }
+
+            (0..num_constraints)
+                .map(|i| usize::from(az[i] * bz[i] != self.u * cz[i] + self.E[i]))
+                .sum::<usize>()
+                == 0
+        };
+
+        // verify if comm_E and comm_W are commitments to E and W
+        let res_comm: bool = {
+            let (comm_witness, comm_E) = rayon::join(
+                || commit(&self.generators, &self.witness),
+                || commit(&self.generators, &self.E),
+            );
+            self.comm_witness == comm_witness && self.comm_E == comm_E
+        };
+
+        res_eq && res_comm
     }
 
     fn is_zero(&self) -> bool {
@@ -240,8 +277,8 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             .expect("should be able to hash");
 
         // TODO: ensure generators are okay
-        let mut hash_circuit = cs.create_circuit(&self.generators);
-        self.prepend(&mut hash_circuit);
+        let hash_circuit = cs.create_circuit(&self.generators);
+        self.prepend(hash_circuit);
     }
 
     fn has_crossterms(&self) -> bool {
