@@ -45,13 +45,6 @@ impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
         self.latest = next;
         self.pc = pc;
         self.i += 1;
-        self.latest.push_hash(hash_public_io(
-            self.folded.clone(),
-            self.i,
-            self.pc,
-            self.latest.z0(),
-            self.latest.public_inputs(),
-        ));
     }
 }
 
@@ -115,7 +108,7 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
     Ok(())
 }
 
-fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>(
+pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>(
     folded: [A; L],
     i: usize,
     pc: usize,

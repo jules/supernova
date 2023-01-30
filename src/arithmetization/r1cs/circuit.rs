@@ -191,11 +191,6 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             + G::ScalarExt::from(self.shape.num_vars as u64)
     }
 
-    // TODO
-    fn push_hash(&mut self, x: G::ScalarExt) {
-        todo!()
-    }
-
     fn has_crossterms(&self) -> bool {
         self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != G::ScalarExt::one()
     }
