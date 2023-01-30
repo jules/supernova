@@ -29,6 +29,8 @@ pub struct ProvingAssignment<G: CurveExt> {
 impl<G: CurveExt> ProvingAssignment<G> {
     /// Creates a committed relaxed R1CS circuit out of the given step circuit, which essentially
     /// defines the circuit shape, includes the commitments and prepends the hash validation.
+    ///
+    /// TODO: prepend hash constraints
     pub fn create_circuit(&self, generators: &[G]) -> R1CS<G> {
         let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
