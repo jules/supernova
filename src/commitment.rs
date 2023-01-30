@@ -1,6 +1,6 @@
 //! Commitment logic used for the creation of committed circuit structures.
 
-use halo2curves::CurveExt;
+use pasta_curves::arithmetic::CurveExt;
 use rayon::prelude::*;
 use sha3::{
     digest::{ExtendableOutput, Input},

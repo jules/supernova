@@ -15,8 +15,9 @@ use super::{CircuitShape, R1CS};
 use crate::commitment::commit;
 use bellperson::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
 use group::ff::Field;
-use halo2curves::CurveExt;
+use pasta_curves::arithmetic::CurveExt;
 
+#[derive(Default)]
 pub struct ProvingAssignment<G: CurveExt> {
     a: Vec<LinearCombination<G::ScalarExt>>,
     b: Vec<LinearCombination<G::ScalarExt>>,
