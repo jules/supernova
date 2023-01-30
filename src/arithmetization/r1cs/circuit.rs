@@ -166,6 +166,25 @@ impl<G: CurveExt> R1CS<G> {
 
         (t, comm_T)
     }
+
+    fn prepend(&mut self, other: &mut Self) {
+        other.shape.A.append(&mut self.shape.A);
+        other.shape.B.append(&mut self.shape.B);
+        other.shape.C.append(&mut self.shape.C);
+        self.shape.num_vars += other.shape.num_vars;
+        self.shape.num_public_inputs += other.shape.num_public_inputs;
+        self.shape.A = other.shape.A;
+        self.shape.B = other.shape.B;
+        self.shape.C = other.shape.C;
+        self.comm_witness += other.comm_witness;
+        self.comm_E += other.comm_E;
+        other.E.append(&mut self.E);
+        self.E = other.E;
+        other.witness.append(&mut self.witness);
+        self.witness = other.witness;
+        other.instance.append(&mut self.instance);
+        self.instance = other.instance;
+    }
 }
 
 impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
@@ -222,22 +241,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
 
         // TODO: ensure generators are okay
         let mut hash_circuit = cs.create_circuit(&self.generators);
-        hash_circuit.shape.A.append(&mut self.shape.A);
-        hash_circuit.shape.B.append(&mut self.shape.B);
-        hash_circuit.shape.C.append(&mut self.shape.C);
-        self.shape.num_vars += hash_circuit.shape.num_vars;
-        self.shape.num_public_inputs += hash_circuit.shape.num_public_inputs;
-        self.shape.A = hash_circuit.shape.A;
-        self.shape.B = hash_circuit.shape.B;
-        self.shape.C = hash_circuit.shape.C;
-        self.comm_witness += hash_circuit.comm_witness;
-        self.comm_E += hash_circuit.comm_E;
-        hash_circuit.E.append(&mut self.E);
-        self.E = hash_circuit.E;
-        hash_circuit.witness.append(&mut self.witness);
-        self.witness = hash_circuit.witness;
-        hash_circuit.instance.append(&mut self.instance);
-        self.instance = hash_circuit.instance;
+        self.prepend(&mut hash_circuit);
     }
 
     fn has_crossterms(&self) -> bool {
