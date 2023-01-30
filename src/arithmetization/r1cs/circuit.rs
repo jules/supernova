@@ -3,11 +3,13 @@
 
 use crate::{commit, Arithmetization};
 use core::ops::{Add, AddAssign};
-use group::ff::Field;
+use group::ff::{Field, PrimeField};
 use halo2curves::CurveExt;
 use itertools::concat;
 use poseidon::Poseidon;
 use rayon::prelude::*;
+use serde::Serialize;
+use sha3::{Digest, Sha3_256};
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
@@ -18,10 +20,51 @@ pub struct CircuitShape<G: CurveExt> {
     pub(crate) C: Vec<Vec<G::ScalarExt>>,
 }
 
+#[derive(Serialize)]
+pub struct SerializableShape {
+    num_vars: usize,
+    num_public_inputs: usize,
+    A: Vec<Vec<Vec<u8>>>,
+    B: Vec<Vec<Vec<u8>>>,
+    C: Vec<Vec<Vec<u8>>>,
+}
+
 impl<G: CurveExt> CircuitShape<G> {
-    // TODO
     fn digest(&self) -> G::ScalarExt {
-        todo!()
+        let convert_matrix = |m: &[Vec<G::ScalarExt>]| -> Vec<Vec<Vec<u8>>> {
+            m.iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|value| {
+                            let repr = value.to_repr();
+                            let slice = repr.as_ref();
+                            let mut bytes = vec![0u8; slice.len()];
+                            bytes.copy_from_slice(slice);
+                            bytes
+                        })
+                        .collect::<Vec<Vec<u8>>>()
+                })
+                .collect::<Vec<Vec<Vec<u8>>>>()
+        };
+
+        let serializable = SerializableShape {
+            num_vars: self.num_vars,
+            num_public_inputs: self.num_public_inputs,
+            A: convert_matrix(&self.A),
+            B: convert_matrix(&self.B),
+            C: convert_matrix(&self.C),
+        };
+
+        let bytes = bincode::serialize(&serializable).unwrap();
+
+        let mut hasher = Sha3_256::new();
+        hasher.input(&bytes);
+        let digest = hasher.result();
+
+        let mut repr = <G::ScalarExt as PrimeField>::Repr::default();
+        let len = repr.as_ref().len();
+        repr.as_mut().copy_from_slice(&digest[..len]);
+        G::ScalarExt::from_repr(repr).unwrap()
     }
 
     #[allow(clippy::type_complexity)]
