@@ -6,10 +6,11 @@ use core::ops::{Add, AddAssign};
 use group::ff::{Field, PrimeField};
 use halo2curves::CurveExt;
 use itertools::concat;
-use poseidon::Poseidon;
+use neptune::{poseidon::PoseidonConstants, Poseidon};
 use rayon::prelude::*;
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
+use typenum::U4;
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
@@ -168,20 +169,20 @@ impl<G: CurveExt> R1CS<G> {
 
 impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
     fn digest(&self) -> G::ScalarExt {
-        let mut poseidon: Poseidon<G::Base, 5, 4> = Poseidon::new(8, 5);
+        let mut poseidon = Poseidon::new(&PoseidonConstants::<_, U4>::new());
         let bases = vec![
             self.comm_witness.jacobian_coordinates().0,
             self.comm_witness.jacobian_coordinates().1,
             self.comm_witness.jacobian_coordinates().2,
         ];
-        poseidon.update(
+        poseidon.set_preimage(
             bases
                 .into_iter()
                 .chain(self.witness.clone().into_iter().map(scalar_to_base::<G>))
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
-        base_to_scalar::<G>(poseidon.squeeze())
+        base_to_scalar::<G>(poseidon.hash())
     }
 
     // TODO
@@ -223,9 +224,9 @@ impl<G: CurveExt> Add<R1CS<G>> for R1CS<G> {
 
 impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
     fn add_assign(&mut self, other: Self) {
-        let mut poseidon: Poseidon<G::ScalarExt, 5, 4> = Poseidon::new(8, 5);
+        let mut poseidon = Poseidon::new(&PoseidonConstants::<_, U4>::new());
         let (t, comm_T) = self.commit_t(&other);
-        poseidon.update(
+        poseidon.set_preimage(
             &[self.shape.digest()]
                 .into_iter()
                 .chain(self.instance.clone())
@@ -233,7 +234,7 @@ impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
                 .chain(t.clone())
                 .collect::<Vec<G::ScalarExt>>(),
         );
-        let r = poseidon.squeeze();
+        let r = poseidon.hash();
         self.instance
             .par_iter_mut()
             .zip(other.instance)

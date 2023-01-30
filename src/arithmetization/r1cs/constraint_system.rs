@@ -1,7 +1,7 @@
 //! Implementation of an R1CS constraint system, which generates the coefficient matrices
 //! and constructs the instance-witness vector when evaluating a circuit.
 //!
-//! Circuits are expected to follow methodology used in the bellman library.
+//! Circuits are expected to follow methodology used in the bellperson library.
 // NOTE: Code taken largely from:
 // https://github.com/zkcrypto/bellman/blob/main/src/groth16/prover.rs
 //
@@ -13,7 +13,7 @@
 
 use super::{CircuitShape, R1CS};
 use crate::commitment::commit;
-use bellman::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
+use bellperson::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
 use group::ff::Field;
 use halo2curves::CurveExt;
 
@@ -37,12 +37,11 @@ impl<G: CurveExt> ProvingAssignment<G> {
                 .map(|lc| {
                     let mut witnesses = vec![];
                     let mut inputs = vec![];
-                    lc.as_ref().iter().for_each(|(variable, coeff)| {
-                        match variable.get_unchecked() {
+                    lc.iter()
+                        .for_each(|(variable, coeff)| match variable.get_unchecked() {
                             Index::Input(_) => inputs.push(*coeff),
                             Index::Aux(_) => witnesses.push(*coeff),
-                        }
-                    });
+                        });
                     witnesses.extend(inputs);
                     witnesses
                 })
