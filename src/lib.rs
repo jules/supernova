@@ -46,6 +46,25 @@ impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
         self.latest = next;
         self.pc = pc;
         self.i += 1;
+        self.latest.push_hash(
+            [self
+                .folded
+                .iter()
+                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
+            .into_iter()
+            .chain([G::ScalarExt::from(self.i as u64)])
+            .chain([G::ScalarExt::from(self.pc as u64)])
+            .chain(self.latest.z0())
+            .chain(self.latest.public_inputs().to_vec())
+            .chain(
+                [self
+                    .folded
+                    .iter()
+                    .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
+                .into_iter(),
+            )
+            .collect::<Vec<G::ScalarExt>>(),
+        );
     }
 }
 
@@ -137,4 +156,19 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
         .collect::<Vec<G::ScalarExt>>(),
     );
     poseidon.hash()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestCircuit {}
+
+    #[test]
+    fn test_single_circuit() {
+        let proof = Proof::new();
+    }
+
+    #[test]
+    fn test_multi_circuit() {}
 }
