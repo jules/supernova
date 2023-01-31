@@ -123,47 +123,30 @@ pub struct R1CS<G: CurveExt> {
 
 impl<G: CurveExt> R1CS<G> {
     fn commit_t(&self, other: &Self) -> (Vec<G::ScalarExt>, G) {
-        let (az1, bz1, cz1) = {
-            let z1 = concat(vec![
-                self.witness.clone(),
-                vec![self.u],
-                self.instance.clone(),
-            ]);
-            self.shape.multiply_vec(&z1)
-        };
+        let (az1, bz1, cz1) = self
+            .shape
+            .multiply_vec(&[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat());
+        let (az2, bz2, cz2) = self.shape.multiply_vec(
+            &[
+                other.witness.as_slice(),
+                &[other.u],
+                other.instance.as_slice(),
+            ]
+            .concat(),
+        );
 
-        let (az2, bz2, cz2) = {
-            let z2 = concat(vec![
-                other.witness.clone(),
-                vec![G::ScalarExt::one()],
-                other.instance.clone(),
-            ]);
-            self.shape.multiply_vec(&z2)
-        };
-
-        let az1_times_bz2 = (0..az1.len())
+        let t = az1
             .into_par_iter()
-            .map(|i| az1[i] * bz2[i])
+            .zip(bz2)
+            .zip(az2)
+            .zip(bz1)
+            .zip(cz1)
+            .zip(cz2)
+            .map(|(((((az1, bz2), az2), bz1), cz1), cz2)| {
+                az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
+            })
             .collect::<Vec<G::ScalarExt>>();
-        let az2_times_bz1 = (0..az2.len())
-            .into_par_iter()
-            .map(|i| az2[i] * bz1[i])
-            .collect::<Vec<G::ScalarExt>>();
-        let u1_times_cz2 = (0..cz2.len())
-            .into_par_iter()
-            .map(|i| self.u * cz2[i])
-            .collect::<Vec<G::ScalarExt>>();
-
-        let t = az1_times_bz2
-            .par_iter()
-            .zip(&az2_times_bz1)
-            .zip(&u1_times_cz2)
-            .zip(&cz1)
-            .map(|(((a, b), c), d)| *a + *b - *c - *d)
-            .collect::<Vec<G::ScalarExt>>();
-
         let comm_T = commit(&self.generators, &t);
-
         (t, comm_T)
     }
 
