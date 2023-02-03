@@ -12,9 +12,10 @@
 // the circuit shapes needed for the SuperNova protocol.
 
 use super::{CircuitShape, R1CS};
-use crate::commitment::commit;
+use crate::{commitment::commit, r1cs::multiply_vec};
 use bellperson::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
 use group::ff::Field;
+use itertools::concat;
 use pasta_curves::arithmetic::CurveExt;
 
 #[derive(Default)]
@@ -47,13 +48,30 @@ impl<G: CurveExt> ProvingAssignment<G> {
                 .collect::<Vec<Vec<G::ScalarExt>>>()
         };
 
+        let A = eval_matrix(&self.a);
+        let B = eval_matrix(&self.b);
+        let C = eval_matrix(&self.c);
+        let output = {
+            let (_, _, cz) = multiply_vec::<G>(
+                &A,
+                &B,
+                &C,
+                &concat(vec![
+                    self.aux_assignment.clone(),
+                    vec![G::ScalarExt::one()],
+                    self.input_assignment.clone()[1..].to_vec(),
+                ]),
+            );
+            cz[cz.len() - 1]
+        };
+
         R1CS {
             shape: CircuitShape {
                 num_vars: self.aux_assignment.len(),
                 num_public_inputs: self.input_assignment.len(),
-                A: eval_matrix(&self.a),
-                B: eval_matrix(&self.b),
-                C: eval_matrix(&self.c),
+                A,
+                B,
+                C,
             },
             generators: generators.to_vec(),
             comm_witness: commit(generators, &self.aux_assignment),
@@ -62,6 +80,7 @@ impl<G: CurveExt> ProvingAssignment<G> {
             witness: self.aux_assignment.clone(),
             instance: self.input_assignment.clone()[1..].to_vec(),
             u: G::ScalarExt::one(),
+            output,
         }
     }
 }
