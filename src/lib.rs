@@ -219,7 +219,7 @@ mod tests {
         cs.set_output(z0.clone());
         let _ = base.synthesize(&mut cs, z0.as_slice()).unwrap();
         // TODO: can we infer generator size
-        let generators = create_generators(b"supernova_test", 1000);
+        let generators = create_generators(1000);
         let r1cs = cs.create_circuit(&generators);
 
         let folded = [r1cs.clone(); 1];
