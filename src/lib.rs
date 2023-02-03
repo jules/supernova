@@ -161,23 +161,29 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arithmetization::Circuit;
+    use crate::{
+        arithmetization::Circuit,
+        r1cs::{ProvingAssignment, R1CS},
+    };
+    use bellperson::{gadgets::num::AllocatedNum, SynthesisError};
+    use group::ff::PrimeField;
+    use pasta_curves::pallas::Point;
 
     #[derive(Default)]
-    struct CubicCircuit<F: ScalarExt> {
+    struct CubicCircuit<F: PrimeField> {
         _p: PhantomData<F>,
     }
 
-    impl<F: ScalarExt> Circuit<F> for CubicCircuit<F> {
+    impl<F: PrimeField> Circuit<F> for CubicCircuit<F> {
         fn synthesize<CS: ConstraintSystem<F>>(
             &self,
             cs: &mut CS,
-            z: &[AllocatedNum<F>],
+            z: &[F],
         ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
             // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the input and output.
-            let x = &z[0];
+            let x = AllocatedNum::alloc(cs.namespace(|| "x"), || Ok(z[0]))?;
             let x_sq = x.square(cs.namespace(|| "x_sq"))?;
-            let x_cu = x_sq.mul(cs.namespace(|| "x_cu"), x)?;
+            let x_cu = x_sq.mul(cs.namespace(|| "x_cu"), &x)?;
             let y = AllocatedNum::alloc(cs.namespace(|| "y"), || {
                 Ok(x_cu.get_value().unwrap() + x.get_value().unwrap() + F::from(5u64))
             })?;
@@ -204,11 +210,21 @@ mod tests {
             vec![z[0] * z[0] * z[0] + z[0] + F::from(5u64)]
         }
     }
+
     #[test]
-    fn test_single_circuit<G: CurveExt, A: Arithmetization<G>>() {
-        let folded = [CubicCircuit::default(); 1];
-        let mut proof = Proof::<G, A, 1>::new(folded, CubicCircuit::default());
-        proof.update(CubicCircuit::default(), 0);
+    fn test_single_circuit() {
+        let base = CubicCircuit::default();
+        let mut cs = ProvingAssignment::default();
+        let z0 = vec![<Point as CurveExt>::ScalarExt::zero()];
+        cs.set_output(z0.clone());
+        let _ = base.synthesize(&mut cs, z0.as_slice()).unwrap();
+        // TODO: can we infer generator size
+        let generators = create_generators(b"supernova_test", 1000);
+        let r1cs = cs.create_circuit(&generators);
+
+        let folded = [r1cs.clone(); 1];
+        let mut proof = Proof::<Point, R1CS<Point>, 1>::new(folded, r1cs.clone());
+        proof.update(r1cs.clone(), 0);
     }
 
     #[test]

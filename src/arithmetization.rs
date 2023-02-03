@@ -4,7 +4,9 @@
 pub mod plonk;
 pub mod r1cs;
 
-use bellperson::{Circuit as BellpersonCircuit, ConstraintSystem as BellpersonConstraintSystem};
+use bellperson::{
+    gadgets::num::AllocatedNum, ConstraintSystem as BellpersonConstraintSystem, SynthesisError,
+};
 use core::ops::{Add, AddAssign};
 use group::ff::PrimeField;
 use pasta_curves::arithmetic::CurveExt;
@@ -39,10 +41,16 @@ pub trait Arithmetization<G: CurveExt>: Clone + Add<Self> + AddAssign<Self> {
     fn z0(&self) -> Vec<G::ScalarExt>;
 }
 
-pub trait Circuit<F: PrimeField>: BellpersonCircuit<F> {
-    fn output(&self, z: &[F]) -> Vec<F>;
-}
-
 pub trait ConstraintSystem<F: PrimeField>: BellpersonConstraintSystem<F> {
     fn set_output(&mut self, output: Vec<F>);
+}
+
+pub trait Circuit<F: PrimeField> {
+    fn synthesize<CS: ConstraintSystem<F>>(
+        &self,
+        cs: &mut CS,
+        z: &[F],
+    ) -> Result<Vec<AllocatedNum<F>>, SynthesisError>;
+
+    fn output(&self, z: &[F]) -> Vec<F>;
 }
