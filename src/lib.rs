@@ -55,7 +55,7 @@ impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
             .chain([G::ScalarExt::from(self.i as u64)])
             .chain([G::ScalarExt::from(self.pc as u64)])
             .chain(self.latest.z0())
-            .chain([self.latest.output()])
+            .chain(self.latest.output().to_vec())
             .chain(
                 [self
                     .folded
@@ -95,8 +95,11 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
         proof.latest.z0(),
         proof.latest.output(),
     );
-    if proof.latest.output() != hash {
-        return Err(VerificationError::HashMismatch(hash, proof.latest.output()));
+    if proof.latest.public_inputs()[0] != hash {
+        return Err(VerificationError::HashMismatch(
+            hash,
+            proof.latest.public_inputs()[0],
+        ));
     }
 
     // Ensure PC is within range.
@@ -130,7 +133,7 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
     i: usize,
     pc: usize,
     z0: Vec<G::ScalarExt>,
-    output: G::ScalarExt,
+    output: &[G::ScalarExt],
 ) -> G::ScalarExt {
     // TODO: validate parameters
     let constants = PoseidonConstants::<_, U4>::new();
@@ -143,7 +146,7 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
         .chain([G::ScalarExt::from(i as u64)])
         .chain([G::ScalarExt::from(pc as u64)])
         .chain(z0)
-        .chain([output])
+        .chain(output.to_vec())
         .chain(
             [folded
                 .iter()

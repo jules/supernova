@@ -4,7 +4,7 @@
 pub mod plonk;
 pub mod r1cs;
 
-use bellperson::Circuit as BellpersonCircuit;
+use bellperson::{Circuit as BellpersonCircuit, ConstraintSystem as BellpersonConstraintSystem};
 use core::ops::{Add, AddAssign};
 use group::ff::PrimeField;
 use pasta_curves::arithmetic::CurveExt;
@@ -26,7 +26,7 @@ pub trait Arithmetization<G: CurveExt>: Clone + Add<Self> + AddAssign<Self> {
     fn public_inputs(&self) -> &[G::ScalarExt];
 
     // Returns the circuit output.
-    fn output(&self) -> G::ScalarExt;
+    fn output(&self) -> &[G::ScalarExt];
 
     // Pushes a hash into the public IO of the circuit.
     fn push_hash(&mut self, elements: Vec<G::ScalarExt>);
@@ -40,5 +40,9 @@ pub trait Arithmetization<G: CurveExt>: Clone + Add<Self> + AddAssign<Self> {
 }
 
 pub trait Circuit<F: PrimeField>: BellpersonCircuit<F> {
-    fn output(&self, z: &[F]) -> F;
+    fn output(&self, z: &[F]) -> Vec<F>;
+}
+
+pub trait ConstraintSystem<F: PrimeField>: BellpersonConstraintSystem<F> {
+    fn set_output(&mut self, output: Vec<F>);
 }

@@ -68,6 +68,41 @@ impl<G: CurveExt> CircuitShape<G> {
         repr.as_mut().copy_from_slice(&digest[..len]);
         G::ScalarExt::from_repr(repr).unwrap()
     }
+
+    #[allow(clippy::type_complexity)]
+    fn multiply_vec(
+        &self,
+        z: &[G::ScalarExt],
+    ) -> (Vec<G::ScalarExt>, Vec<G::ScalarExt>, Vec<G::ScalarExt>) {
+        if z.len() != self.num_vars + self.num_public_inputs + 1 {
+            // TODO: shouldnt panic here
+            panic!("mismatched inputs to shape");
+        }
+
+        let sparse_matrix_vec_product =
+            |m: &[Vec<G::ScalarExt>], z: &[G::ScalarExt]| -> Vec<G::ScalarExt> {
+                m.par_iter()
+                    .map(|row| {
+                        row.par_iter()
+                            .zip(z)
+                            .fold(G::ScalarExt::zero, |acc, (val, v)| acc + (*val * v))
+                            .reduce(G::ScalarExt::zero, |acc, val| acc + val)
+                    })
+                    .collect::<Vec<G::ScalarExt>>()
+            };
+
+        let (Az, (Bz, Cz)) = rayon::join(
+            || sparse_matrix_vec_product(&self.A, z),
+            || {
+                rayon::join(
+                    || sparse_matrix_vec_product(&self.B, z),
+                    || sparse_matrix_vec_product(&self.C, z),
+                )
+            },
+        );
+
+        (Az, Bz, Cz)
+    }
 }
 
 #[derive(Clone)]
@@ -80,21 +115,15 @@ pub struct R1CS<G: CurveExt> {
     pub(crate) witness: Vec<G::ScalarExt>,
     pub(crate) instance: Vec<G::ScalarExt>,
     pub(crate) u: G::ScalarExt,
-    pub(crate) output: G::ScalarExt,
+    pub(crate) output: Vec<G::ScalarExt>,
 }
 
 impl<G: CurveExt> R1CS<G> {
     fn commit_t(&self, other: &Self) -> (Vec<G::ScalarExt>, G) {
-        let (az1, bz1, cz1) = multiply_vec::<G>(
-            &self.shape.A,
-            &self.shape.B,
-            &self.shape.C,
-            &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
-        );
-        let (az2, bz2, cz2) = multiply_vec::<G>(
-            &self.shape.A,
-            &self.shape.B,
-            &self.shape.C,
+        let (az1, bz1, cz1) = self
+            .shape
+            .multiply_vec(&[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat());
+        let (az2, bz2, cz2) = self.shape.multiply_vec(
             &[
                 other.witness.as_slice(),
                 &[other.u],
@@ -172,7 +201,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             vec![self.u],
             self.instance.clone(),
         ]);
-        let (az, bz, cz) = multiply_vec::<G>(&self.shape.A, &self.shape.B, &self.shape.C, &z);
+        let (az, bz, cz) = self.shape.multiply_vec(&z);
         if az.len() != num_constraints || bz.len() != num_constraints || cz.len() != num_constraints
         {
             return false;
@@ -201,8 +230,8 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
         &self.instance
     }
 
-    fn output(&self) -> G::ScalarExt {
-        self.output
+    fn output(&self) -> &[G::ScalarExt] {
+        &self.output
     }
 
     fn params(&self) -> G::ScalarExt {
@@ -270,43 +299,6 @@ impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
         self.comm_E += comm_T * r;
         self.u += r;
     }
-}
-
-#[allow(clippy::type_complexity)]
-pub fn multiply_vec<G: CurveExt>(
-    A: &[Vec<G::ScalarExt>],
-    B: &[Vec<G::ScalarExt>],
-    C: &[Vec<G::ScalarExt>],
-    z: &[G::ScalarExt],
-) -> (Vec<G::ScalarExt>, Vec<G::ScalarExt>, Vec<G::ScalarExt>) {
-    if z.len() != A.len() {
-        // TODO: shouldnt panic here
-        panic!("mismatched inputs to shape");
-    }
-
-    let sparse_matrix_vec_product =
-        |m: &[Vec<G::ScalarExt>], z: &[G::ScalarExt]| -> Vec<G::ScalarExt> {
-            m.par_iter()
-                .map(|row| {
-                    row.par_iter()
-                        .zip(z)
-                        .fold(G::ScalarExt::zero, |acc, (val, v)| acc + (*val * v))
-                        .reduce(G::ScalarExt::zero, |acc, val| acc + val)
-                })
-                .collect::<Vec<G::ScalarExt>>()
-        };
-
-    let (Az, (Bz, Cz)) = rayon::join(
-        || sparse_matrix_vec_product(A, z),
-        || {
-            rayon::join(
-                || sparse_matrix_vec_product(B, z),
-                || sparse_matrix_vec_product(C, z),
-            )
-        },
-    );
-
-    (Az, Bz, Cz)
 }
 
 fn scalar_to_base<G: CurveExt>(scalar: G::ScalarExt) -> G::Base {

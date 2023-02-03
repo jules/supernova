@@ -12,10 +12,12 @@
 // the circuit shapes needed for the SuperNova protocol.
 
 use super::{CircuitShape, R1CS};
-use crate::{commitment::commit, r1cs::multiply_vec};
-use bellperson::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
+use crate::{arithmetization::ConstraintSystem, commitment::commit};
+use bellperson::{
+    ConstraintSystem as BellpersonConstraintSystem, Index, LinearCombination, SynthesisError,
+    Variable,
+};
 use group::ff::Field;
-use itertools::concat;
 use pasta_curves::arithmetic::CurveExt;
 
 #[derive(Default)]
@@ -26,12 +28,18 @@ pub struct ProvingAssignment<G: CurveExt> {
 
     input_assignment: Vec<G::ScalarExt>,
     aux_assignment: Vec<G::ScalarExt>,
+    output: Vec<G::ScalarExt>,
 }
 
 impl<G: CurveExt> ProvingAssignment<G> {
     /// Creates a committed relaxed R1CS circuit out of the given step circuit, which essentially
     /// defines the circuit shape, includes the commitments and prepends the hash validation.
     pub fn create_circuit(&self, generators: &[G]) -> R1CS<G> {
+        // TODO: shouldnt panic here
+        if self.output.is_empty() {
+            panic!("no output set");
+        }
+
         let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
                 .map(|lc| {
@@ -48,30 +56,13 @@ impl<G: CurveExt> ProvingAssignment<G> {
                 .collect::<Vec<Vec<G::ScalarExt>>>()
         };
 
-        let A = eval_matrix(&self.a);
-        let B = eval_matrix(&self.b);
-        let C = eval_matrix(&self.c);
-        let output = {
-            let (_, _, cz) = multiply_vec::<G>(
-                &A,
-                &B,
-                &C,
-                &concat(vec![
-                    self.aux_assignment.clone(),
-                    vec![G::ScalarExt::one()],
-                    self.input_assignment.clone()[1..].to_vec(),
-                ]),
-            );
-            cz[cz.len() - 1]
-        };
-
         R1CS {
             shape: CircuitShape {
                 num_vars: self.aux_assignment.len(),
                 num_public_inputs: self.input_assignment.len(),
-                A,
-                B,
-                C,
+                A: eval_matrix(&self.a),
+                B: eval_matrix(&self.b),
+                C: eval_matrix(&self.c),
             },
             generators: generators.to_vec(),
             comm_witness: commit(generators, &self.aux_assignment),
@@ -80,12 +71,12 @@ impl<G: CurveExt> ProvingAssignment<G> {
             witness: self.aux_assignment.clone(),
             instance: self.input_assignment.clone()[1..].to_vec(),
             u: G::ScalarExt::one(),
-            output,
+            output: self.output.clone(),
         }
     }
 }
 
-impl<G: CurveExt> ConstraintSystem<G::ScalarExt> for ProvingAssignment<G> {
+impl<G: CurveExt> BellpersonConstraintSystem<G::ScalarExt> for ProvingAssignment<G> {
     type Root = Self;
 
     fn alloc<F, A, AR>(&mut self, _: A, f: F) -> Result<Variable, SynthesisError>
@@ -145,5 +136,11 @@ impl<G: CurveExt> ConstraintSystem<G::ScalarExt> for ProvingAssignment<G> {
 
     fn get_root(&mut self) -> &mut Self::Root {
         self
+    }
+}
+
+impl<G: CurveExt> ConstraintSystem<G::ScalarExt> for ProvingAssignment<G> {
+    fn set_output(&mut self, output: Vec<G::ScalarExt>) {
+        self.output = output;
     }
 }
