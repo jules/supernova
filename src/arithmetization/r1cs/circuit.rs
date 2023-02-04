@@ -11,7 +11,7 @@ use pasta_curves::arithmetic::CurveExt;
 use rayon::prelude::*;
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
-use typenum::{U12, U6};
+use typenum::{U16, U6};
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
@@ -253,10 +253,9 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
                     .unwrap()
             })
             .collect::<Vec<AllocatedNum<_>>>();
-        let constants = PoseidonConstants::<_, U12>::new();
-        let result =
-            poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
-                .expect("should be able to hash");
+        let constants = PoseidonConstants::<_, U16>::new();
+        poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
+            .expect("should be able to hash");
 
         let hash_circuit = cs.create_circuit(&self.generators);
         self.prepend(hash_circuit);
@@ -282,17 +281,17 @@ impl<G: CurveExt> Add<R1CS<G>> for R1CS<G> {
 
 impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
     fn add_assign(&mut self, other: Self) {
-        let constants = PoseidonConstants::<_, U6>::new();
+        let constants = PoseidonConstants::<_, U16>::new();
         let mut poseidon = Poseidon::new(&constants);
         let (t, comm_T) = self.commit_t(&other);
-        poseidon.set_preimage(
-            &[self.shape.digest()]
-                .into_iter()
-                .chain(self.instance.clone())
-                .chain(other.instance.clone())
-                .chain(t.clone())
-                .collect::<Vec<G::ScalarExt>>(),
-        );
+        [self.shape.digest()]
+            .into_iter()
+            .chain(self.instance.clone())
+            .chain(other.instance.clone())
+            .chain(t.clone())
+            .for_each(|el| {
+                poseidon.input(el).expect("should not exceed 32 elements");
+            });
         let r = poseidon.hash();
         self.instance
             .par_iter_mut()

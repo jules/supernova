@@ -14,7 +14,7 @@ use core::marker::PhantomData;
 use group::ff::Field;
 use neptune::{poseidon::PoseidonConstants, Poseidon};
 use pasta_curves::arithmetic::CurveExt;
-use typenum::U12;
+use typenum::U16;
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
@@ -135,9 +135,9 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
     output: &[G::ScalarExt],
 ) -> G::ScalarExt {
     // TODO: validate parameters
-    let constants = PoseidonConstants::<_, U12>::new();
+    let constants = PoseidonConstants::<_, U16>::new();
     let mut poseidon = Poseidon::new(&constants);
-    let elements = &[folded
+    [folded
         .iter()
         .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
     .into_iter()
@@ -151,9 +151,9 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
             .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
         .into_iter(),
     )
-    .collect::<Vec<G::ScalarExt>>();
-    println!("{:?}", elements);
-    poseidon.set_preimage(elements);
+    .for_each(|el| {
+        poseidon.input(el).expect("should not exceed 32 elements");
+    });
     poseidon.hash()
 }
 
