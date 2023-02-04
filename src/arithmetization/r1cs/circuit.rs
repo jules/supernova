@@ -11,7 +11,7 @@ use pasta_curves::arithmetic::CurveExt;
 use rayon::prelude::*;
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
-use typenum::U4;
+use typenum::{U12, U6};
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
@@ -66,7 +66,10 @@ impl<G: CurveExt> CircuitShape<G> {
         let mut repr = <G::ScalarExt as PrimeField>::Repr::default();
         let len = repr.as_ref().len();
         repr.as_mut().copy_from_slice(&digest[..len]);
-        G::ScalarExt::from_repr(repr).unwrap()
+        // TODO: jank-ass clamping
+        repr.as_mut()[0] = 0;
+        repr.as_mut()[31] = 0;
+        G::ScalarExt::from_repr_vartime(repr).unwrap()
     }
 
     #[allow(clippy::type_complexity)]
@@ -169,7 +172,7 @@ impl<G: CurveExt> R1CS<G> {
 
 impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
     fn digest(&self) -> G::ScalarExt {
-        let constants = PoseidonConstants::<_, U4>::new();
+        let constants = PoseidonConstants::<_, U6>::new();
         let mut poseidon = Poseidon::new(&constants);
         let bases = vec![
             self.comm_witness.jacobian_coordinates().0,
@@ -241,6 +244,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
 
     fn push_hash(&mut self, elements: Vec<G::ScalarExt>) {
         let mut cs = ProvingAssignment::<G>::default();
+        println!("{:?}", elements);
         let elements = elements
             .iter()
             .enumerate()
@@ -249,11 +253,11 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
                     .unwrap()
             })
             .collect::<Vec<AllocatedNum<_>>>();
-        let constants = PoseidonConstants::<_, U4>::new();
-        poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
-            .expect("should be able to hash");
+        let constants = PoseidonConstants::<_, U12>::new();
+        let result =
+            poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
+                .expect("should be able to hash");
 
-        // TODO: ensure generators are okay
         let hash_circuit = cs.create_circuit(&self.generators);
         self.prepend(hash_circuit);
     }
@@ -278,7 +282,7 @@ impl<G: CurveExt> Add<R1CS<G>> for R1CS<G> {
 
 impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
     fn add_assign(&mut self, other: Self) {
-        let constants = PoseidonConstants::<_, U4>::new();
+        let constants = PoseidonConstants::<_, U6>::new();
         let mut poseidon = Poseidon::new(&constants);
         let (t, comm_T) = self.commit_t(&other);
         poseidon.set_preimage(

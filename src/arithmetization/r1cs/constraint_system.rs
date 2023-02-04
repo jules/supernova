@@ -35,11 +35,6 @@ impl<G: CurveExt> ProvingAssignment<G> {
     /// Creates a committed relaxed R1CS circuit out of the given step circuit, which essentially
     /// defines the circuit shape, includes the commitments and prepends the hash validation.
     pub fn create_circuit(&self, generators: &[G]) -> R1CS<G> {
-        // TODO: shouldnt panic here
-        if self.output.is_empty() {
-            panic!("no output set");
-        }
-
         let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
                 .map(|lc| {
@@ -69,7 +64,7 @@ impl<G: CurveExt> ProvingAssignment<G> {
             comm_E: G::identity(),
             E: vec![G::ScalarExt::zero(); self.a.len()],
             witness: self.aux_assignment.clone(),
-            instance: self.input_assignment.clone()[1..].to_vec(),
+            instance: self.input_assignment.clone().to_vec(),
             u: G::ScalarExt::one(),
             output: self.output.clone(),
         }

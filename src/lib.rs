@@ -14,7 +14,7 @@ use core::marker::PhantomData;
 use group::ff::Field;
 use neptune::{poseidon::PoseidonConstants, Poseidon};
 use pasta_curves::arithmetic::CurveExt;
-use typenum::U4;
+use typenum::U12;
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
@@ -46,31 +46,30 @@ impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
         self.latest = next;
         self.pc = pc;
         self.i += 1;
-        self.latest.push_hash(
+        let elements = [self
+            .folded
+            .iter()
+            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
+        .into_iter()
+        .chain([G::ScalarExt::from(self.i as u64)])
+        .chain([G::ScalarExt::from(self.pc as u64)])
+        .chain(self.latest.z0())
+        .chain(self.latest.output().to_vec())
+        .chain(
             [self
                 .folded
                 .iter()
-                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
-            .into_iter()
-            .chain([G::ScalarExt::from(self.i as u64)])
-            .chain([G::ScalarExt::from(self.pc as u64)])
-            .chain(self.latest.z0())
-            .chain(self.latest.output().to_vec())
-            .chain(
-                [self
-                    .folded
-                    .iter()
-                    .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
-                .into_iter(),
-            )
-            .collect::<Vec<G::ScalarExt>>(),
-        );
+                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
+            .into_iter(),
+        )
+        .collect::<Vec<G::ScalarExt>>();
+        self.latest.push_hash(elements);
     }
 }
 
 /// Verify a SuperNova proof.
 pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
-    proof: Proof<G, A, L>,
+    proof: &Proof<G, A, L>,
 ) -> Result<(), VerificationError<G::ScalarExt>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
@@ -95,10 +94,10 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
         proof.latest.z0(),
         proof.latest.output(),
     );
-    if proof.latest.public_inputs()[0] != hash {
+    if proof.latest.public_inputs()[proof.latest.public_inputs().len() - 2] != hash {
         return Err(VerificationError::HashMismatch(
             hash,
-            proof.latest.public_inputs()[0],
+            proof.latest.public_inputs()[proof.latest.public_inputs().len() - 2],
         ));
     }
 
@@ -136,25 +135,25 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
     output: &[G::ScalarExt],
 ) -> G::ScalarExt {
     // TODO: validate parameters
-    let constants = PoseidonConstants::<_, U4>::new();
+    let constants = PoseidonConstants::<_, U12>::new();
     let mut poseidon = Poseidon::new(&constants);
-    poseidon.set_preimage(
-        &[folded
+    let elements = &[folded
+        .iter()
+        .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
+    .into_iter()
+    .chain([G::ScalarExt::from(i as u64)])
+    .chain([G::ScalarExt::from(pc as u64)])
+    .chain(z0)
+    .chain(output.to_vec())
+    .chain(
+        [folded
             .iter()
-            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
-        .into_iter()
-        .chain([G::ScalarExt::from(i as u64)])
-        .chain([G::ScalarExt::from(pc as u64)])
-        .chain(z0)
-        .chain(output.to_vec())
-        .chain(
-            [folded
-                .iter()
-                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
-            .into_iter(),
-        )
-        .collect::<Vec<G::ScalarExt>>(),
-    );
+            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
+        .into_iter(),
+    )
+    .collect::<Vec<G::ScalarExt>>();
+    println!("{:?}", elements);
+    poseidon.set_preimage(elements);
     poseidon.hash()
 }
 
@@ -181,7 +180,7 @@ mod tests {
             z: &[F],
         ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
             // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the input and output.
-            let x = AllocatedNum::alloc(cs.namespace(|| "x"), || Ok(z[0]))?;
+            let x = AllocatedNum::alloc_input(cs.namespace(|| "x"), || Ok(z[0]))?;
             let x_sq = x.square(cs.namespace(|| "x_sq"))?;
             let x_cu = x_sq.mul(cs.namespace(|| "x_cu"), &x)?;
             let y = AllocatedNum::alloc(cs.namespace(|| "y"), || {
@@ -225,6 +224,7 @@ mod tests {
         let folded = [r1cs.clone(); 1];
         let mut proof = Proof::<Point, R1CS<Point>, 1>::new(folded, r1cs.clone());
         proof.update(r1cs.clone(), 0);
+        verify(&proof).unwrap();
     }
 
     #[test]
