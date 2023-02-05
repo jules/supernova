@@ -11,12 +11,13 @@ use pasta_curves::arithmetic::CurveExt;
 use rayon::prelude::*;
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
-use typenum::{U16, U6};
+use typenum::U6;
 
 #[derive(Clone)]
 pub struct CircuitShape<G: CurveExt> {
     pub(crate) num_vars: usize,
     pub(crate) num_public_inputs: usize,
+    pub(crate) num_hash_inputs: usize,
     pub(crate) A: Vec<Vec<G::ScalarExt>>,
     pub(crate) B: Vec<Vec<G::ScalarExt>>,
     pub(crate) C: Vec<Vec<G::ScalarExt>>,
@@ -67,7 +68,6 @@ impl<G: CurveExt> CircuitShape<G> {
         let len = repr.as_ref().len();
         repr.as_mut().copy_from_slice(&digest[..len]);
         // TODO: jank-ass clamping
-        repr.as_mut()[0] = 0;
         repr.as_mut()[31] = 0;
         G::ScalarExt::from_repr_vartime(repr).unwrap()
     }
@@ -110,6 +110,7 @@ impl<G: CurveExt> CircuitShape<G> {
 
 #[derive(Clone)]
 pub struct R1CS<G: CurveExt> {
+    pub(crate) constants: PoseidonConstants<G::ScalarExt, U6>,
     pub(crate) generators: Vec<G>,
     pub(crate) shape: CircuitShape<G>,
     pub(crate) comm_witness: G,
@@ -151,11 +152,13 @@ impl<G: CurveExt> R1CS<G> {
     }
 
     fn prepend(&mut self, mut other: Self) {
+        println!("SELF INSTANCE {:?}", self.instance);
+        println!("OTHER INSTANCE {:?}", other.instance);
         other.shape.A.append(&mut self.shape.A);
         other.shape.B.append(&mut self.shape.B);
         other.shape.C.append(&mut self.shape.C);
         self.shape.num_vars += other.shape.num_vars;
-        self.shape.num_public_inputs += other.shape.num_public_inputs;
+        self.shape.num_hash_inputs += other.shape.num_public_inputs;
         self.shape.A = other.shape.A;
         self.shape.B = other.shape.B;
         self.shape.C = other.shape.C;
@@ -167,6 +170,7 @@ impl<G: CurveExt> R1CS<G> {
         self.witness = other.witness;
         other.instance.append(&mut self.instance);
         self.instance = other.instance;
+        println!("APPENDED {:?}", self.instance);
     }
 }
 
@@ -249,15 +253,17 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             .iter()
             .enumerate()
             .map(|(i, value)| {
+                println!("CIRCUIT HASH INPUT {:?}", value);
                 AllocatedNum::alloc_input(cs.namespace(|| format!("data {}", i)), || Ok(*value))
                     .unwrap()
             })
-            .collect::<Vec<AllocatedNum<_>>>();
-        let constants = PoseidonConstants::<_, U16>::new();
-        poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &constants)
-            .expect("should be able to hash");
+            .collect::<Vec<AllocatedNum<G::ScalarExt>>>();
+        let result =
+            poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &self.constants)
+                .expect("should be able to hash");
+        println!("HASH RESULT {:?}", result.get_value().unwrap());
 
-        let hash_circuit = cs.create_circuit(&self.generators);
+        let hash_circuit = cs.create_circuit(&self.generators, self.constants.clone());
         self.prepend(hash_circuit);
     }
 
@@ -281,8 +287,7 @@ impl<G: CurveExt> Add<R1CS<G>> for R1CS<G> {
 
 impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
     fn add_assign(&mut self, other: Self) {
-        let constants = PoseidonConstants::<_, U16>::new();
-        let mut poseidon = Poseidon::new(&constants);
+        let mut poseidon = Poseidon::new(&self.constants);
         let (t, comm_T) = self.commit_t(&other);
         [self.shape.digest()]
             .into_iter()

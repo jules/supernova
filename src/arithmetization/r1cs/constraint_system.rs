@@ -18,7 +18,9 @@ use bellperson::{
     Variable,
 };
 use group::ff::Field;
+use neptune::poseidon::PoseidonConstants;
 use pasta_curves::arithmetic::CurveExt;
+use typenum::U6;
 
 #[derive(Default)]
 pub struct ProvingAssignment<G: CurveExt> {
@@ -34,7 +36,11 @@ pub struct ProvingAssignment<G: CurveExt> {
 impl<G: CurveExt> ProvingAssignment<G> {
     /// Creates a committed relaxed R1CS circuit out of the given step circuit, which essentially
     /// defines the circuit shape, includes the commitments and prepends the hash validation.
-    pub fn create_circuit(&self, generators: &[G]) -> R1CS<G> {
+    pub fn create_circuit(
+        &self,
+        generators: &[G],
+        constants: PoseidonConstants<G::ScalarExt, U6>,
+    ) -> R1CS<G> {
         let eval_matrix = |m: &[LinearCombination<G::ScalarExt>]| -> Vec<Vec<G::ScalarExt>> {
             m.iter()
                 .map(|lc| {
@@ -55,10 +61,12 @@ impl<G: CurveExt> ProvingAssignment<G> {
             shape: CircuitShape {
                 num_vars: self.aux_assignment.len(),
                 num_public_inputs: self.input_assignment.len(),
+                num_hash_inputs: 0,
                 A: eval_matrix(&self.a),
                 B: eval_matrix(&self.b),
                 C: eval_matrix(&self.c),
             },
+            constants,
             generators: generators.to_vec(),
             comm_witness: commit(generators, &self.aux_assignment),
             comm_E: G::identity(),

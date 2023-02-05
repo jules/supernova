@@ -12,9 +12,12 @@ use errors::VerificationError;
 
 use core::marker::PhantomData;
 use group::ff::Field;
-use neptune::{poseidon::PoseidonConstants, Poseidon};
+use neptune::{
+    poseidon::{HashMode, PoseidonConstants},
+    Poseidon,
+};
 use pasta_curves::arithmetic::CurveExt;
-use typenum::U16;
+use typenum::U6;
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
@@ -135,7 +138,7 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
     output: &[G::ScalarExt],
 ) -> G::ScalarExt {
     // TODO: validate parameters
-    let constants = PoseidonConstants::<_, U16>::new();
+    let constants = PoseidonConstants::<_, U6>::new();
     let mut poseidon = Poseidon::new(&constants);
     [folded
         .iter()
@@ -152,6 +155,7 @@ pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>
         .into_iter(),
     )
     .for_each(|el| {
+        println!("HASH IO INPUT {:?}", el);
         poseidon.input(el).expect("should not exceed 32 elements");
     });
     poseidon.hash()
@@ -212,6 +216,7 @@ mod tests {
 
     #[test]
     fn test_single_circuit() {
+        let constants = PoseidonConstants::<_, U6>::new();
         let base = CubicCircuit::default();
         let mut cs = ProvingAssignment::default();
         let z0 = vec![<Point as CurveExt>::ScalarExt::zero()];
@@ -219,7 +224,7 @@ mod tests {
         let _ = base.synthesize(&mut cs, z0.as_slice()).unwrap();
         // TODO: can we infer generator size
         let generators = create_generators(1000);
-        let r1cs = cs.create_circuit(&generators);
+        let r1cs = cs.create_circuit(&generators, constants);
 
         let folded = [r1cs.clone(); 1];
         let mut proof = Proof::<Point, R1CS<Point>, 1>::new(folded, r1cs.clone());
