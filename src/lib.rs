@@ -10,70 +10,92 @@ pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
-use core::marker::PhantomData;
-use group::ff::Field;
-use neptune::{
-    poseidon::{HashMode, PoseidonConstants},
-    Poseidon,
+use ark_bls12_381::{Fr, FrConfig, G1Projective};
+use ark_crypto_primitives::sponge::{
+    poseidon::{
+        find_poseidon_ark_and_mds, PoseidonConfig, PoseidonDefaultConfigEntry, PoseidonSponge,
+    },
+    CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use pasta_curves::arithmetic::CurveExt;
-use typenum::U6;
+use ark_ff::{PrimeField, Zero};
+
+const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultConfigEntry; 7] = [
+    PoseidonDefaultConfigEntry::new(2, 17, 8, 31, 0),
+    PoseidonDefaultConfigEntry::new(3, 5, 8, 56, 0),
+    PoseidonDefaultConfigEntry::new(4, 5, 8, 56, 0),
+    PoseidonDefaultConfigEntry::new(5, 5, 8, 57, 0),
+    PoseidonDefaultConfigEntry::new(6, 5, 8, 57, 0),
+    PoseidonDefaultConfigEntry::new(7, 5, 8, 57, 0),
+    PoseidonDefaultConfigEntry::new(8, 5, 8, 57, 0),
+];
+const PARAMS_OPT_FOR_WEIGHTS: [PoseidonDefaultConfigEntry; 7] = [
+    PoseidonDefaultConfigEntry::new(2, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(3, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(4, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(5, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(6, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(7, 257, 8, 13, 0),
+    PoseidonDefaultConfigEntry::new(8, 257, 8, 13, 0),
+];
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
-pub struct Proof<G: CurveExt, A: Arithmetization<G>, const L: usize> {
+pub struct Proof<A: Arithmetization, const L: usize> {
+    constants: PoseidonConfig<Fr>,
+    generators: Vec<G1Projective>,
     folded: [A; L],
     latest: A,
     pc: usize,
     i: usize,
-    _p: PhantomData<G>,
 }
 
-impl<G: CurveExt, A: Arithmetization<G>, const L: usize> Proof<G, A, L> {
+impl<A: Arithmetization, const L: usize> Proof<A, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
-    pub fn new(folded: [A; L], latest: A) -> Self {
+    pub fn new(folded: [A; L], latest: A, generators: Vec<G1Projective>) -> Self {
+        let (ark, mds) =
+            find_poseidon_ark_and_mds(Fr::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         Self {
+            constants: PoseidonConfig::new(8, 31, 17, ark, mds, 2, ark[0].len()),
+            generators,
             folded,
             latest,
             pc: 0,
             i: 0,
-            _p: Default::default(),
         }
     }
 
-    /// Update a SuperNova proof with a new instance/witness pair.
-    pub fn update(&mut self, next: A, pc: usize) {
-        self.folded[self.pc] += self.latest.clone();
-        self.latest = next;
+    /// Update a SuperNova proof with a new circuit.
+    pub fn update(&mut self, pc: usize) {
+        self.folded[self.pc] += self.latest;
         self.pc = pc;
         self.i += 1;
-        let elements = [self
-            .folded
-            .iter()
-            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
-        .into_iter()
-        .chain([G::ScalarExt::from(self.i as u64)])
-        .chain([G::ScalarExt::from(self.pc as u64)])
-        .chain(self.latest.z0())
-        .chain(self.latest.output().to_vec())
-        .chain(
-            [self
-                .folded
-                .iter()
-                .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
-            .into_iter(),
-        )
-        .collect::<Vec<G::ScalarExt>>();
-        self.latest.push_hash(elements);
+        // self.latest = self.synthesize(&mut cs);
+        // let elements = [self
+        //     .folded
+        //     .iter()
+        //     .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
+        // .into_iter()
+        // .chain([G::ScalarExt::from(self.i as u64)])
+        // .chain([G::ScalarExt::from(self.pc as u64)])
+        // .chain(self.latest.z0())
+        // .chain(self.latest.output().to_vec())
+        // .chain(
+        //     [self
+        //         .folded
+        //         .iter()
+        //         .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
+        //     .into_iter(),
+        // )
+        // .collect::<Vec<G::ScalarExt>>();
     }
 }
 
 /// Verify a SuperNova proof.
-pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
-    proof: &Proof<G, A, L>,
-) -> Result<(), VerificationError<G::ScalarExt>> {
+pub fn verify<A: Arithmetization, const L: usize>(
+    proof: &Proof<A, L>,
+) -> Result<(), VerificationError<Fr>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -91,7 +113,8 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
     // Check that the public IO of the latest instance includes
     // the correct hash.
     let hash = hash_public_io(
-        proof.folded.clone(),
+        &proof.constants,
+        &proof.folded,
         proof.i,
         proof.pc,
         proof.latest.z0(),
@@ -122,6 +145,7 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
         return Err(VerificationError::UnsatisfiedCircuit);
     }
 
+    println!("folded is fine");
     // Ensure the latest instance/witness pair is satisfied.
     if !proof.latest.is_satisfied() {
         return Err(VerificationError::UnsatisfiedCircuit);
@@ -130,35 +154,34 @@ pub fn verify<G: CurveExt, A: Arithmetization<G>, const L: usize>(
     Ok(())
 }
 
-pub(crate) fn hash_public_io<G: CurveExt, A: Arithmetization<G>, const L: usize>(
-    folded: [A; L],
+pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
+    constants: &PoseidonConfig<Fr>,
+    folded: &[A; L],
     i: usize,
     pc: usize,
-    z0: Vec<G::ScalarExt>,
-    output: &[G::ScalarExt],
-) -> G::ScalarExt {
+    z0: Vec<Fr>,
+    output: &[Fr],
+) -> Fr {
     // TODO: validate parameters
-    let constants = PoseidonConstants::<_, U6>::new();
-    let mut poseidon = Poseidon::new(&constants);
-    [folded
-        .iter()
-        .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
-    .into_iter()
-    .chain([G::ScalarExt::from(i as u64)])
-    .chain([G::ScalarExt::from(pc as u64)])
-    .chain(z0)
-    .chain(output.to_vec())
-    .chain(
-        [folded
+    let mut sponge = PoseidonSponge::<Fr>::new(&constants);
+    sponge.absorb(
+        &[folded
             .iter()
-            .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
-        .into_iter(),
-    )
-    .for_each(|el| {
-        println!("HASH IO INPUT {:?}", el);
-        poseidon.input(el).expect("should not exceed 32 elements");
-    });
-    poseidon.hash()
+            .fold(Fr::zero(), |acc, pair| acc + pair.params())]
+        .into_iter()
+        .chain([Fr::from(i as u64)])
+        .chain([Fr::from(pc as u64)])
+        .chain(z0)
+        .chain(output.to_vec())
+        .chain(
+            [folded
+                .iter()
+                .fold(Fr::zero(), |acc, pair| acc + pair.digest(constants))]
+            .into_iter(),
+        )
+        .collect::<Vec<Fr>>(),
+    );
+    sponge.squeeze_native_field_elements(1)[0]
 }
 
 #[cfg(test)]
@@ -208,18 +231,13 @@ mod tests {
 
             Ok(vec![y])
         }
-
-        fn output(&self, z: &[F]) -> Vec<F> {
-            vec![z[0] * z[0] * z[0] + z[0] + F::from(5u64)]
-        }
     }
 
     #[test]
     fn test_single_circuit() {
-        let constants = PoseidonConstants::<_, U6>::new();
         let base = CubicCircuit::default();
         let mut cs = ProvingAssignment::default();
-        let z0 = vec![<Point as CurveExt>::ScalarExt::zero()];
+        let z0 = vec![<Point as CurveExt>::ScalarField::zero()];
         cs.set_output(z0.clone());
         let output = base.synthesize(&mut cs, z0.as_slice()).unwrap();
         // TODO: can we infer generator size

@@ -1,17 +1,17 @@
-use group::ff::PrimeField;
+use ark_ff::Field;
 use std::fmt::{Display, Formatter, Result};
 
 /// A list of possible errors that can occur during proof verification.
 #[derive(Debug)]
-pub enum VerificationError<S: PrimeField> {
+pub enum VerificationError<F: Field> {
     ExpectedBaseCase,
-    HashMismatch(S, S),
+    HashMismatch(F, F),
     PCOutOfRange(usize, usize),
     UnexpectedCrossterms,
     UnsatisfiedCircuit,
 }
 
-impl<S: PrimeField> Display for VerificationError<S> {
+impl<F: Field> Display for VerificationError<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             VerificationError::ExpectedBaseCase => write!(f, "ERROR: expected base case"),

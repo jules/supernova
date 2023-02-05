@@ -1,20 +1,20 @@
 //! Defines the common functionality for any kind of program arithmetization to be used
 //! in the SuperNova protocol.
+//! Additionally, includes a model which defines this functionality for R1CS.
 
-pub mod plonk;
 pub mod r1cs;
 
-use bellperson::{
-    gadgets::num::AllocatedNum, ConstraintSystem as BellpersonConstraintSystem, SynthesisError,
-};
+use ark_bls12_381::Fr;
+use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+use ark_ec::short_weierstrass::SWCurveConfig;
 use core::ops::{Add, AddAssign};
-use group::ff::PrimeField;
-use pasta_curves::arithmetic::CurveExt;
 
 /// A foldable circuit representation.
-pub trait Arithmetization<G: CurveExt>: Clone + Add<Self> + AddAssign<Self> {
+pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
+    type ConstraintSystem;
+
     // Returns a digest of the circuit.
-    fn digest(&self) -> G::ScalarExt;
+    fn digest(&self, constants: &PoseidonConfig<Fr>) -> Fr;
 
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self) -> bool;
@@ -23,34 +23,20 @@ pub trait Arithmetization<G: CurveExt>: Clone + Add<Self> + AddAssign<Self> {
     fn is_zero(&self) -> bool;
 
     // Returns the circuit metadata used for hashing.
-    fn params(&self) -> G::ScalarExt;
+    fn params(&self) -> Fr;
 
-    fn public_inputs(&self) -> &[G::ScalarExt];
+    // Returns the public inputs of the circuit.
+    fn public_inputs(&self) -> &[Fr];
 
     // Returns the circuit output.
-    fn output(&self) -> &[G::ScalarExt];
-
-    // Pushes a hash into the public IO of the circuit.
-    fn push_hash(&mut self, elements: Vec<G::ScalarExt>);
+    fn output(&self) -> &[Fr];
 
     // Ensures that the arithmetization hasn't been folded yet.
     fn has_crossterms(&self) -> bool;
 
     // Returns a set of base case inputs. Should in all cases just return
-    // as many zero scalars as there are inputs.
-    fn z0(&self) -> Vec<G::ScalarExt>;
-}
+    // as many one scalars as there are inputs.
+    fn z0(&self) -> Vec<Fr>;
 
-pub trait ConstraintSystem<F: PrimeField>: BellpersonConstraintSystem<F> {
-    fn set_output(&mut self, output: Vec<F>);
-}
-
-pub trait Circuit<F: PrimeField> {
-    fn synthesize<CS: ConstraintSystem<F>>(
-        &self,
-        cs: &mut CS,
-        z: &[F],
-    ) -> Result<Vec<AllocatedNum<F>>, SynthesisError>;
-
-    fn output(&self, z: &[F]) -> Vec<F>;
+    fn synthesize(&mut self, params: Fr, pc: usize, i: usize, cs: &mut Self::ConstraintSystem);
 }
