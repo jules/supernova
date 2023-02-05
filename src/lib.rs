@@ -221,14 +221,23 @@ mod tests {
         let mut cs = ProvingAssignment::default();
         let z0 = vec![<Point as CurveExt>::ScalarExt::zero()];
         cs.set_output(z0.clone());
-        let _ = base.synthesize(&mut cs, z0.as_slice()).unwrap();
+        let output = base.synthesize(&mut cs, z0.as_slice()).unwrap();
         // TODO: can we infer generator size
         let generators = create_generators(1000);
-        let r1cs = cs.create_circuit(&generators, constants);
+        let r1cs = cs.create_circuit(&generators, constants.clone());
 
         let folded = [r1cs.clone(); 1];
         let mut proof = Proof::<Point, R1CS<Point>, 1>::new(folded, r1cs.clone());
         proof.update(r1cs.clone(), 0);
+        verify(&proof).unwrap();
+
+        // Update with a next step
+        let mut cs = ProvingAssignment::default();
+        let _ = base
+            .synthesize(&mut cs, &[output[0].get_value().unwrap()])
+            .unwrap();
+        let r1cs2 = cs.create_circuit(&generators, constants);
+        proof.update(r1cs2, 0);
         verify(&proof).unwrap();
     }
 

@@ -77,7 +77,7 @@ impl<G: CurveExt> CircuitShape<G> {
         &self,
         z: &[G::ScalarExt],
     ) -> (Vec<G::ScalarExt>, Vec<G::ScalarExt>, Vec<G::ScalarExt>) {
-        if z.len() != self.num_vars + self.num_public_inputs + 1 {
+        if z.len() != self.num_vars + self.num_public_inputs + self.num_hash_inputs + 1 {
             // TODO: shouldnt panic here
             panic!("mismatched inputs to shape");
         }
@@ -197,7 +197,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
         let num_constraints = self.shape.A.len();
         if self.witness.len() != self.shape.num_vars
             || self.E.len() != num_constraints
-            || self.instance.len() != self.shape.num_public_inputs
+            || self.instance.len() != self.shape.num_public_inputs + self.shape.num_hash_inputs
         {
             return false;
         }
@@ -214,11 +214,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             return false;
         }
 
-        if (0..num_constraints)
-            .map(|i| usize::from(az[i] * bz[i] != self.u * cz[i] + self.E[i]))
-            .sum::<usize>()
-            != 0
-        {
+        if (0..num_constraints).any(|i| az[i] * bz[i] != self.u * cz[i] + self.E[i]) {
             return false;
         }
 
@@ -262,6 +258,7 @@ impl<G: CurveExt> Arithmetization<G> for R1CS<G> {
             poseidon_hash_allocated(cs.namespace(|| "poseidon hash"), elements, &self.constants)
                 .expect("should be able to hash");
         println!("HASH RESULT {:?}", result.get_value().unwrap());
+        result.inputize(&mut cs).unwrap();
 
         let hash_circuit = cs.create_circuit(&self.generators, self.constants.clone());
         self.prepend(hash_circuit);
@@ -298,6 +295,10 @@ impl<G: CurveExt> AddAssign<R1CS<G>> for R1CS<G> {
                 poseidon.input(el).expect("should not exceed 32 elements");
             });
         let r = poseidon.hash();
+        self.witness
+            .par_iter_mut()
+            .zip(other.witness)
+            .for_each(|(w1, w2)| *w1 += w2 * r);
         self.instance
             .par_iter_mut()
             .zip(other.instance)

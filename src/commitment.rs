@@ -15,9 +15,9 @@ pub fn create_generators<G: CurveExt>(n: usize) -> Vec<G> {
 }
 
 pub fn commit<G: CurveExt>(generators: &[G], scalars: &[G::ScalarExt]) -> G {
-    generators
+    scalars
         .par_iter()
-        .zip(scalars)
-        .map(|(gen, scalar)| *gen * scalar)
+        .zip(generators)
+        .map(|(scalar, gen)| *gen * scalar)
         .reduce(|| G::identity(), |a, b| a + b)
 }
