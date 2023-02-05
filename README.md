@@ -15,4 +15,6 @@ This repository contains an implementation of the [SuperNova](https://eprint.iac
 - [x] Prover/verifier construction
 - [ ] Tests
 
-Optimizations TBD
+## Disclaimer
+
+Nova and SuperNova are research works done by @srinathsetty, Abhiram Kothapalli (and Ioanna Tzialla for Nova), and this repository heavily relies on the earlier implementation of [Nova](https://github.com/microsoft/Nova). All credit goes to them!
