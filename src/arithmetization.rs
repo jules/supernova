@@ -4,7 +4,7 @@
 
 pub mod r1cs;
 
-use ark_bls12_381::{Fr, G1Projective};
+use ark_bls12_381::{Fq, Fr, G1Projective};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ec::short_weierstrass::SWCurveConfig;
 use core::ops::{Add, AddAssign};
@@ -29,7 +29,7 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     fn public_inputs(&self) -> &[Fr];
 
     // Returns the circuit output.
-    fn output(&self) -> &[Fr];
+    fn output(&self) -> &[Fq];
 
     // Ensures that the arithmetization hasn't been folded yet.
     fn has_crossterms(&self) -> bool;

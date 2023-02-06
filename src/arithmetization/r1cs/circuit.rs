@@ -20,7 +20,7 @@ use ark_r1cs_std::{
     fields::{fp::FpVar, nonnative::NonNativeFieldVar},
     groups::curves::short_weierstrass::bls12::G1Var,
 };
-use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef};
+use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
 use core::ops::{Add, AddAssign};
 use itertools::concat;
 use rayon::prelude::*;
@@ -114,7 +114,7 @@ pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) instance: Vec<Fr>,
     pub(crate) u: Fr,
     pub(crate) hash: Fr,
-    pub(crate) output: Vec<Fr>,
+    pub(crate) output: Vec<Fq>,
     pub(crate) circuit: C,
 }
 
@@ -162,7 +162,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         NonNativeFieldVar<Fr, Fq>,
         FpVar<Fq>,
         Vec<NonNativeFieldVar<Fr, Fq>>,
-        Vec<NonNativeFieldVar<Fr, Fq>>,
+        Vec<FpVar<Fq>>,
         G1Var<Bls12Config>,
         G1Var<Bls12Config>,
         NonNativeFieldVar<Fr, Fq>,
@@ -179,7 +179,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let output = self
             .output()
             .into_iter()
-            .map(|v| NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
         let comm_W =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
@@ -240,7 +240,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         &self.instance
     }
 
-    fn output(&self) -> &[Fr] {
+    fn output(&self) -> &[Fq] {
         &self.output
     }
 
@@ -277,17 +277,21 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         let output = self
             .circuit
-            .synthesize(cs, self.output)
+            .generate_constraints(cs.clone(), self.output.as_slice())
             .expect("should be able to synthesize step circuit");
+
+        let new_circuit = cs.create_circuit(&self.generators);
 
         // Set the new output for later use.
         self.output = output
             .iter()
-            .map(|v| v.get_value().unwrap())
-            .collect::<Vec<Fr>>();
+            .map(|v| match v {
+                Variable::Instance(index) => new_circuit.instance[index],
+                Variable::Witness(index) => new_circuit.witness[index],
+            })
+            .collect::<Vec<Fq>>();
 
         // Fold new circuit into current one.
-        let new_circuit = cs.create_circuit(&self.generators);
         *self += new_circuit;
     }
 }
