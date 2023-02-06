@@ -16,7 +16,7 @@ use ark_ec::{
     short_weierstrass::{Projective, SWCurveConfig},
     AffineRepr, CurveGroup,
 };
-use ark_ff::{Field, One, PrimeField, Zero};
+use ark_ff::{BigInt, Field, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
     eq::EqGadget,
@@ -164,17 +164,17 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         cs: &mut ConstraintSystemRef<Fq>,
         i: usize,
     ) -> (
-        NonNativeFieldVar<Fr, Fq>,
+        FpVar<Fq>,
         FpVar<Fq>,
         Vec<FpVar<Fq>>,
         Vec<FpVar<Fq>>,
         G1Var<Bls12Config>,
         G1Var<Bls12Config>,
-        NonNativeFieldVar<Fr, Fq>,
-        NonNativeFieldVar<Fr, Fq>,
+        FpVar<Fq>,
+        FpVar<Fq>,
         G1Var<Bls12Config>,
     ) {
-        let params = NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(params)).unwrap();
+        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(scalar_to_base(params))).unwrap();
         let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
         let z0 = self
             .z0()
@@ -189,8 +189,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let comm_W =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
         let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
-        let u = NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
-        let hash = NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
+        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(self.u))).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(self.hash))).unwrap();
         let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
         (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
     }
@@ -359,4 +359,17 @@ impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
         self.u += r;
         self.comm_T = comm_T;
     }
+}
+
+// Casts a scalar field element to a base field element.
+// Necessary for homogenizing input types in the SuperNova circuit.
+fn scalar_to_base(scalar: Fr) -> Fq {
+    let bigint = scalar.into_bigint();
+    let mut base_limbs = [0u64; 6];
+    base_limbs[0] = bigint.0[0];
+    base_limbs[1] = bigint.0[1];
+    base_limbs[2] = bigint.0[2];
+    base_limbs[3] = bigint.0[3];
+    let base_bigint = BigInt::<6>(base_limbs);
+    Fq::from_bigint(base_bigint).unwrap()
 }
