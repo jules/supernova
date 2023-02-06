@@ -280,12 +280,29 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
         let latest_hash =
-            NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
+            FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(latest_hash))).unwrap();
 
         let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
         let is_base_case = FpVar::<_>::is_eq(&i, &zero).unwrap();
 
         // Synthesize both cases
+        // Base case
+        let W_base =
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
+        let E_base =
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
+        let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+        let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+
+        // Non base case
+        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
+        sponge.absorb(&params).unwrap();
+        sponge.absorb(&i).unwrap();
+        z0.iter().for_each(|v| sponge.absorb(v).unwrap());
+        output.iter().for_each(|v| sponge.absorb(v).unwrap());
+        // Absorb U_current
+        let hash = sponge.squeeze_field_elements(1).unwrap()[0];
+        FpVar::<_>::enforce_equal(&hash, &hash_base).unwrap();
 
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
