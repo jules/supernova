@@ -23,6 +23,7 @@ use ark_r1cs_std::{
     fields::{fp::FpVar, nonnative::NonNativeFieldVar},
     groups::curves::short_weierstrass::bls12::G1Var,
     select::CondSelectGadget,
+    R1CSVar,
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
 use ark_serialize::CanonicalSerialize;
@@ -286,6 +287,9 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         // Synthesize both cases
 
+        let i_new =
+            FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
+
         let new_input = output
             .iter()
             .zip(z0)
@@ -304,19 +308,26 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Set the new output for later use.
         self.output = output
             .iter()
-            .map(|v| match v {
-                Variable::Instance(index) => new_circuit.instance[index],
-                Variable::Witness(index) => new_circuit.witness[index],
-            })
+            .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
         // Fold new circuit into current one.
         // TODO: this should just be a method, this abstraction is useless
         *self += new_circuit;
 
-        // Compute hash and set it as output
+        // Compute hash.
         let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
-        sponge.absorb(&[params]).unwrap();
+        sponge.absorb(&params).unwrap();
+        sponge.absorb(&i_new).unwrap();
+        z0.iter().for_each(|v| sponge.absorb(v).unwrap());
+        output.iter().for_each(|v| sponge.absorb(v).unwrap());
+        // Absorb U_new
+        // Set computed hash as output.
+        let hash = FpVar::<_>::new_input(cs.clone(), || {
+            Ok(sponge.squeeze_field_elements(1).unwrap()[0]
+                .value()
+                .unwrap())
+        });
     }
 }
 

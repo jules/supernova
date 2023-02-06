@@ -8,5 +8,5 @@ pub trait StepCircuit<F: PrimeField> {
         self,
         cs: ConstraintSystemRef<F>,
         z: &[FpVar<F>],
-    ) -> Result<Vec<Variable>>;
+    ) -> Result<Vec<FpVar<F>>>;
 }
