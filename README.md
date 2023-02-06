@@ -17,4 +17,4 @@ This repository contains an implementation of the [SuperNova](https://eprint.iac
 
 ## Disclaimer
 
-Nova and SuperNova are research works done by Srinath Setty ([GitHub](https://github.com/srinathsetty), [TWitter](https://twitter.com/srinathtv/)), [Abhiram Kothapalli](https://twitter.com/abhiramko/) (and Ioanna Tzialla for Nova), and this repository heavily relies on the earlier implementation of [Nova](https://github.com/microsoft/Nova). All credit goes to them!
+Nova and SuperNova are research works done by Srinath Setty ([GitHub](https://github.com/srinathsetty), [Twitter](https://twitter.com/srinathtv/)), [Abhiram Kothapalli](https://twitter.com/abhiramko/) (and Ioanna Tzialla for Nova), and this repository heavily relies on the earlier implementation of [Nova](https://github.com/microsoft/Nova). All credit goes to them!
