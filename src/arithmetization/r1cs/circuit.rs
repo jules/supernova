@@ -186,8 +186,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
         let u = NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
         let hash = NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
-        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
-        (params, i, z0, output, comm_W, comm_E, u, hash, comm_E)
+        let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
+        (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
     }
 }
 
