@@ -10,7 +10,7 @@ pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
-use ark_bls12_381::{Fr, FrConfig, G1Projective};
+use ark_bls12_381::{Fq, Fr, FrConfig, G1Projective};
 use ark_crypto_primitives::sponge::{
     poseidon::{
         find_poseidon_ark_and_mds, PoseidonConfig, PoseidonDefaultConfigEntry, PoseidonSponge,
@@ -42,7 +42,7 @@ const PARAMS_OPT_FOR_WEIGHTS: [PoseidonDefaultConfigEntry; 7] = [
 /// a most recent instance-witness pair, a program counter and the iteration
 /// that the proof is currently at.
 pub struct Proof<A: Arithmetization, const L: usize> {
-    constants: PoseidonConfig<Fr>,
+    constants: PoseidonConfig<Fq>,
     generators: Vec<G1Projective>,
     folded: [A; L],
     latest: A,
@@ -55,7 +55,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     /// it should track.
     pub fn new(folded: [A; L], latest: A, generators: Vec<G1Projective>) -> Self {
         let (ark, mds) =
-            find_poseidon_ark_and_mds(Fr::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         Self {
             constants: PoseidonConfig::new(8, 31, 17, ark, mds, 2, ark[0].len()),
             generators,

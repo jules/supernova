@@ -303,6 +303,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Absorb U_current
         let hash = sponge.squeeze_field_elements(1).unwrap()[0];
         FpVar::<_>::enforce_equal(&hash, &hash_base).unwrap();
+        // Fold in circuit
 
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
