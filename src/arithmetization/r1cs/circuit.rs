@@ -17,8 +17,10 @@ use ark_ec::{
 use ark_ff::{Field, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
+    eq::EqGadget,
     fields::{fp::FpVar, nonnative::NonNativeFieldVar},
     groups::curves::short_weierstrass::bls12::G1Var,
+    select::CondSelectGadget,
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
 use core::ops::{Add, AddAssign};
@@ -161,7 +163,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
     ) -> (
         NonNativeFieldVar<Fr, Fq>,
         FpVar<Fq>,
-        Vec<NonNativeFieldVar<Fr, Fq>>,
+        Vec<FpVar<Fq>>,
         Vec<FpVar<Fq>>,
         G1Var<Bls12Config>,
         G1Var<Bls12Config>,
@@ -174,7 +176,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let z0 = self
             .z0()
             .into_iter()
-            .map(|v| NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
         let output = self
             .output()
@@ -252,8 +254,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != Fr::one()
     }
 
-    fn z0(&self) -> Vec<Fr> {
-        vec![Fr::zero(); self.shape.num_instance_variables]
+    fn z0(&self) -> Vec<Fq> {
+        vec![Fq::zero(); self.shape.num_instance_variables]
     }
 
     fn synthesize(
@@ -275,9 +277,22 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let latest_hash =
             NonNativeFieldVar::<Fr, Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
 
+        let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+        let is_base_case = FpVar::<_>::is_eq(&i, &zero).unwrap();
+
+        // Synthesize both cases
+
+        let new_input = output
+            .iter()
+            .zip(z0)
+            .map(|(v_output, v_0)| {
+                FpVar::<_>::conditionally_select(&is_base_case, &v_0, &v_output).unwrap()
+            })
+            .collect::<Vec<FpVar<Fq>>>();
+
         let output = self
             .circuit
-            .generate_constraints(cs.clone(), self.output.as_slice())
+            .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
         let new_circuit = cs.create_circuit(&self.generators);
@@ -292,7 +307,10 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .collect::<Vec<Fq>>();
 
         // Fold new circuit into current one.
+        // TODO: this should just be a method, this abstraction is useless
         *self += new_circuit;
+
+        // Compute hash and set it as output
     }
 }
 

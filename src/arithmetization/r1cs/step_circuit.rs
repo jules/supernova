@@ -1,7 +1,12 @@
-use ark_ff::Field;
+use ark_ff::PrimeField;
+use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::{ConstraintSystemRef, Result, Variable};
 
-pub trait StepCircuit<F: Field> {
+pub trait StepCircuit<F: PrimeField> {
     /// Drives generation of new constraints inside `cs`.
-    fn generate_constraints(self, cs: ConstraintSystemRef<F>, z: &[F]) -> Result<Vec<Variable>>;
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<F>,
+        z: &[FpVar<F>],
+    ) -> Result<Vec<Variable>>;
 }

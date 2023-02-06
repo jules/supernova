@@ -36,7 +36,7 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
 
     // Returns a set of base case inputs. Should in all cases just return
     // as many one scalars as there are inputs.
-    fn z0(&self) -> Vec<Fr>;
+    fn z0(&self) -> Vec<Fq>;
 
     fn synthesize(
         &mut self,
