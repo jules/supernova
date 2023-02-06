@@ -46,5 +46,6 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
         pc: usize,
         i: usize,
         cs: &mut Self::ConstraintSystem,
+        constants: &PoseidonConfig<Fq>,
     );
 }

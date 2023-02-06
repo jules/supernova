@@ -5,8 +5,10 @@ use super::StepCircuit;
 use crate::{commit, Arithmetization};
 use ark_bls12_381::{Config as Bls12Config, Fq, Fr, G1Projective};
 use ark_crypto_primitives::sponge::{
+    constraints::CryptographicSpongeVar,
     poseidon::{
-        find_poseidon_ark_and_mds, PoseidonConfig, PoseidonDefaultConfigField, PoseidonSponge,
+        constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig,
+        PoseidonDefaultConfigField, PoseidonSponge,
     },
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
@@ -23,13 +25,13 @@ use ark_r1cs_std::{
     select::CondSelectGadget,
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
+use ark_serialize::CanonicalSerialize;
 use core::ops::{Add, AddAssign};
 use itertools::concat;
 use rayon::prelude::*;
-use serde::Serialize;
 use sha3::{Digest, Sha3_256};
 
-#[derive(Serialize)]
+#[derive(CanonicalSerialize)]
 pub struct SerializableShape {
     num_vars: usize,
     num_public_inputs: usize,
@@ -58,7 +60,8 @@ impl From<ConstraintMatrices<Fq>> for SerializableShape {
 
 impl SerializableShape {
     fn digest(&self, constants: &PoseidonConfig<Fr>) -> Fr {
-        let bytes = bincode::serialize(self).unwrap();
+        let mut bytes = vec![];
+        self.serialize_compressed(&mut bytes).unwrap();
 
         let mut sponge = PoseidonSponge::<Fr>::new(&constants);
         sponge.absorb(&bytes);
@@ -266,6 +269,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         pc: usize,
         i: usize,
         cs: &mut Self::ConstraintSystem,
+        constants: &PoseidonConfig<Fq>,
     ) {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
@@ -311,6 +315,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         *self += new_circuit;
 
         // Compute hash and set it as output
+        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
+        sponge.absorb(&[params]).unwrap();
     }
 }
 
