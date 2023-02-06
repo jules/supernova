@@ -19,11 +19,12 @@ use ark_ec::{
 use ark_ff::{BigInt, Field, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
+    boolean::Boolean,
     eq::EqGadget,
     fields::{fp::FpVar, nonnative::NonNativeFieldVar},
     groups::curves::short_weierstrass::bls12::G1Var,
     select::CondSelectGadget,
-    R1CSVar,
+    R1CSVar, ToConstraintFieldGadget,
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
 use ark_serialize::CanonicalSerialize;
@@ -300,10 +301,26 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         sponge.absorb(&i).unwrap();
         z0.iter().for_each(|v| sponge.absorb(v).unwrap());
         output.iter().for_each(|v| sponge.absorb(v).unwrap());
-        // Absorb U_current
+        sponge
+            .absorb(&comm_W.to_constraint_field().unwrap())
+            .unwrap();
+        sponge
+            .absorb(&comm_E.to_constraint_field().unwrap())
+            .unwrap();
+        sponge.absorb(&u).unwrap();
+        sponge.absorb(&hash_base).unwrap();
         let hash = sponge.squeeze_field_elements(1).unwrap()[0];
-        FpVar::<_>::enforce_equal(&hash, &hash_base).unwrap();
+        let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         // Fold in circuit
+
+        Boolean::<_>::enforce_not_equal(&is_base_case, &non_base_case).unwrap();
+
+        let W_new =
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &W_base, &comm_W).unwrap();
+        let E_new =
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &E_base, &comm_E).unwrap();
+        let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u_base, &u).unwrap();
+        let hash_new = FpVar::<_>::conditionally_select(&is_base_case, &hash_base, &hash).unwrap();
 
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
@@ -339,7 +356,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         sponge.absorb(&i_new).unwrap();
         z0.iter().for_each(|v| sponge.absorb(v).unwrap());
         output.iter().for_each(|v| sponge.absorb(v).unwrap());
-        // Absorb U_new
+        sponge
+            .absorb(&W_new.to_constraint_field().unwrap())
+            .unwrap();
+        sponge
+            .absorb(&E_new.to_constraint_field().unwrap())
+            .unwrap();
+        sponge.absorb(&u_new).unwrap();
+        sponge.absorb(&hash_new).unwrap();
         // Set computed hash as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(sponge.squeeze_field_elements(1).unwrap()[0]
