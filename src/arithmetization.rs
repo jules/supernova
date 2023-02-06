@@ -4,7 +4,7 @@
 
 pub mod r1cs;
 
-use ark_bls12_381::Fr;
+use ark_bls12_381::{Fr, G1Projective};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ec::short_weierstrass::SWCurveConfig;
 use core::ops::{Add, AddAssign};
@@ -38,5 +38,13 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     // as many one scalars as there are inputs.
     fn z0(&self) -> Vec<Fr>;
 
-    fn synthesize(&mut self, params: Fr, pc: usize, i: usize, cs: &mut Self::ConstraintSystem);
+    fn synthesize(
+        &mut self,
+        params: Fr,
+        latest_witness: G1Projective,
+        latest_hash: Fr,
+        pc: usize,
+        i: usize,
+        cs: &mut Self::ConstraintSystem,
+    );
 }
