@@ -268,13 +268,16 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         params: Fr,
         latest_witness: G1Projective,
         latest_hash: Fr,
-        pc: usize,
+        old_pc: usize,
+        new_pc: usize,
         i: usize,
         cs: &mut Self::ConstraintSystem,
         constants: &PoseidonConfig<Fq>,
     ) {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
+        let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
+        let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
         let (params, i, z0, output, comm_W, comm_E, u, hash, T) =
             self.alloc_witnesses(params, cs, i);
@@ -299,6 +302,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
         sponge.absorb(&params).unwrap();
         sponge.absorb(&i).unwrap();
+        sponge.absorb(&old_pc).unwrap();
         z0.iter().for_each(|v| sponge.absorb(v).unwrap());
         output.iter().for_each(|v| sponge.absorb(v).unwrap());
         sponge
@@ -354,6 +358,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
         sponge.absorb(&params).unwrap();
         sponge.absorb(&i_new).unwrap();
+        sponge.absorb(&new_pc).unwrap();
         z0.iter().for_each(|v| sponge.absorb(v).unwrap());
         output.iter().for_each(|v| sponge.absorb(v).unwrap());
         sponge
