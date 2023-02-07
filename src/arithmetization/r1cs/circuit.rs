@@ -300,40 +300,25 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
 
         // Non base case
-        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
-        sponge.absorb(&params).unwrap();
-        sponge.absorb(&i).unwrap();
-        sponge.absorb(&old_pc).unwrap();
-        z0.iter().for_each(|v| sponge.absorb(v).unwrap());
-        output.iter().for_each(|v| sponge.absorb(v).unwrap());
-        sponge
-            .absorb(&comm_W.to_constraint_field().unwrap())
-            .unwrap();
-        sponge
-            .absorb(&comm_E.to_constraint_field().unwrap())
-            .unwrap();
-        sponge.absorb(&u).unwrap();
-        sponge.absorb(&hash).unwrap();
-        let hash = sponge.squeeze_field_elements(1).unwrap()[0];
         let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
+        let hash = compute_io_hash(
+            &constants, cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
+        );
+
         // Fold in circuit
         // Compute r
-        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
-        sponge.absorb(&params).unwrap();
-        sponge
-            .absorb(&comm_W.to_constraint_field().unwrap())
-            .unwrap();
-        sponge
-            .absorb(&comm_E.to_constraint_field().unwrap())
-            .unwrap();
-        sponge.absorb(&u).unwrap();
-        sponge.absorb(&hash).unwrap();
-        sponge
-            .absorb(&latest_witness.to_constraint_field().unwrap())
-            .unwrap();
-        sponge.absorb(&latest_hash).unwrap();
-        sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
-        let r = sponge.squeeze_field_elements(1).unwrap()[0];
+        let r = compute_r(
+            &constants,
+            cs,
+            &params,
+            &comm_W,
+            &comm_E,
+            &u,
+            &hash,
+            &latest_witness,
+            &latest_hash,
+            &T,
+        );
 
         let rW = latest_witness
             .scalar_mul_le(r.to_bits_le().unwrap().iter())
@@ -388,26 +373,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // TODO: this should just be a method, this abstraction is useless
         *self += new_circuit;
 
-        // Compute hash.
-        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
-        sponge.absorb(&params).unwrap();
-        sponge.absorb(&i_new).unwrap();
-        sponge.absorb(&new_pc).unwrap();
-        z0.iter().for_each(|v| sponge.absorb(v).unwrap());
-        output.iter().for_each(|v| sponge.absorb(v).unwrap());
-        sponge
-            .absorb(&W_new.to_constraint_field().unwrap())
-            .unwrap();
-        sponge
-            .absorb(&E_new.to_constraint_field().unwrap())
-            .unwrap();
-        sponge.absorb(&u_new).unwrap();
-        sponge.absorb(&hash_new).unwrap();
-        // Set computed hash as output.
+        // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
-            Ok(sponge.squeeze_field_elements(1).unwrap()[0]
-                .value()
-                .unwrap())
+            Ok(compute_io_hash(
+                &constants, cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new, &u_new,
+                &hash_new,
+            )
+            .value()
+            .unwrap())
         });
     }
 }
@@ -451,6 +424,66 @@ impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
         self.u += r;
         self.comm_T = comm_T;
     }
+}
+
+fn compute_io_hash(
+    constants: &PoseidonConfig<Fq>,
+    cs: &mut ConstraintSystemRef<Fq>,
+    params: &FpVar<Fq>,
+    i: &FpVar<Fq>,
+    pc: &FpVar<Fq>,
+    z0: &[FpVar<Fq>],
+    output: &[FpVar<Fq>],
+    comm_W: &G1Var<Bls12Config>,
+    comm_E: &G1Var<Bls12Config>,
+    u: &FpVar<Fq>,
+    hash: &FpVar<Fq>,
+) -> FpVar<Fq> {
+    let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
+    sponge.absorb(&params).unwrap();
+    sponge.absorb(&i).unwrap();
+    sponge.absorb(&pc).unwrap();
+    z0.iter().for_each(|v| sponge.absorb(v).unwrap());
+    output.iter().for_each(|v| sponge.absorb(v).unwrap());
+    sponge
+        .absorb(&comm_W.to_constraint_field().unwrap())
+        .unwrap();
+    sponge
+        .absorb(&comm_E.to_constraint_field().unwrap())
+        .unwrap();
+    sponge.absorb(&u).unwrap();
+    sponge.absorb(&hash).unwrap();
+    sponge.squeeze_field_elements(1).unwrap()[0]
+}
+
+fn compute_r(
+    constants: &PoseidonConfig<Fq>,
+    cs: &mut ConstraintSystemRef<Fq>,
+    params: &FpVar<Fq>,
+    comm_W: &G1Var<Bls12Config>,
+    comm_E: &G1Var<Bls12Config>,
+    u: &FpVar<Fq>,
+    hash: &FpVar<Fq>,
+    latest_witness: &G1Var<Bls12Config>,
+    latest_hash: &FpVar<Fq>,
+    T: &G1Var<Bls12Config>,
+) -> FpVar<Fq> {
+    let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
+    sponge.absorb(params).unwrap();
+    sponge
+        .absorb(&comm_W.to_constraint_field().unwrap())
+        .unwrap();
+    sponge
+        .absorb(&comm_E.to_constraint_field().unwrap())
+        .unwrap();
+    sponge.absorb(u).unwrap();
+    sponge.absorb(hash).unwrap();
+    sponge
+        .absorb(&latest_witness.to_constraint_field().unwrap())
+        .unwrap();
+    sponge.absorb(latest_hash).unwrap();
+    sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
+    sponge.squeeze_field_elements(1).unwrap()[0]
 }
 
 // Casts a scalar field element to a base field element.
