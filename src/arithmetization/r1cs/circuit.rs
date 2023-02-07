@@ -361,8 +361,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
-        let new_circuit = cs.create_circuit(&self.generators);
-
         // Set the new output for later use.
         self.output = output
             .iter()

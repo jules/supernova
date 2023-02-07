@@ -18,6 +18,7 @@ use ark_crypto_primitives::sponge::{
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ff::{PrimeField, Zero};
+use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
 const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultConfigEntry; 7] = [
     PoseidonDefaultConfigEntry::new(2, 17, 8, 31, 0),
@@ -68,27 +69,23 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
 
     /// Update a SuperNova proof with a new circuit.
     pub fn update(&mut self, pc: usize) {
+        let mut cs = ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
+        self.folded[self.pc].synthesize(
+            self.params(),
+            self.latest.witness_commitment(),
+            self.latest.hash(),
+            self.pc,
+            pc,
+            self.i,
+            &mut cs,
+            &self.constants,
+        );
+        // Create u_i+1, w_i+1
+        // Fold natively
         self.folded[self.pc] += self.latest;
+        // self.latest = new
         self.pc = pc;
         self.i += 1;
-        // self.latest = self.synthesize(&mut cs);
-        // let elements = [self
-        //     .folded
-        //     .iter()
-        //     .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.params())]
-        // .into_iter()
-        // .chain([G::ScalarExt::from(self.i as u64)])
-        // .chain([G::ScalarExt::from(self.pc as u64)])
-        // .chain(self.latest.z0())
-        // .chain(self.latest.output().to_vec())
-        // .chain(
-        //     [self
-        //         .folded
-        //         .iter()
-        //         .fold(G::ScalarExt::zero(), |acc, pair| acc + pair.digest())]
-        //     .into_iter(),
-        // )
-        // .collect::<Vec<G::ScalarExt>>();
     }
 }
 
