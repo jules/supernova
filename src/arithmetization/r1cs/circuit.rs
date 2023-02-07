@@ -22,9 +22,9 @@ use ark_r1cs_std::{
     boolean::Boolean,
     eq::EqGadget,
     fields::{fp::FpVar, nonnative::NonNativeFieldVar},
-    groups::curves::short_weierstrass::bls12::G1Var,
+    groups::{curves::short_weierstrass::bls12::G1Var, CurveVar},
     select::CondSelectGadget,
-    R1CSVar, ToConstraintFieldGadget,
+    R1CSVar, ToBitsGadget, ToConstraintFieldGadget,
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
 use ark_serialize::CanonicalSerialize;
@@ -32,6 +32,7 @@ use core::ops::{Add, AddAssign};
 use itertools::concat;
 use rayon::prelude::*;
 use sha3::{Digest, Sha3_256};
+use std::ops::Mul;
 
 #[derive(CanonicalSerialize)]
 pub struct SerializableShape {
@@ -312,19 +313,52 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .absorb(&comm_E.to_constraint_field().unwrap())
             .unwrap();
         sponge.absorb(&u).unwrap();
-        sponge.absorb(&hash_base).unwrap();
+        sponge.absorb(&hash).unwrap();
         let hash = sponge.squeeze_field_elements(1).unwrap()[0];
         let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         // Fold in circuit
+        // Compute r
+        let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
+        sponge.absorb(&params).unwrap();
+        sponge
+            .absorb(&comm_W.to_constraint_field().unwrap())
+            .unwrap();
+        sponge
+            .absorb(&comm_E.to_constraint_field().unwrap())
+            .unwrap();
+        sponge.absorb(&u).unwrap();
+        sponge.absorb(&hash).unwrap();
+        sponge
+            .absorb(&latest_witness.to_constraint_field().unwrap())
+            .unwrap();
+        sponge.absorb(&latest_hash).unwrap();
+        sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
+        let r = sponge.squeeze_field_elements(1).unwrap()[0];
 
+        let rW = latest_witness
+            .scalar_mul_le(r.to_bits_le().unwrap().iter())
+            .unwrap();
+        let W_fold = comm_W.add(&rW);
+
+        let rT = T.scalar_mul_le(r.to_bits_le().unwrap().iter()).unwrap();
+        let E_fold = comm_E.add(&rT);
+
+        let u_fold = u.add(&r);
+
+        // Fold IO
+        let r_hash = latest_hash.mul(&r);
+        let hash_fold = hash.add(&r_hash);
+
+        // Pick new variables
         Boolean::<_>::enforce_not_equal(&is_base_case, &non_base_case).unwrap();
 
         let W_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &W_base, &comm_W).unwrap();
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &W_base, &W_fold).unwrap();
         let E_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &E_base, &comm_E).unwrap();
-        let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u_base, &u).unwrap();
-        let hash_new = FpVar::<_>::conditionally_select(&is_base_case, &hash_base, &hash).unwrap();
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &E_base, &E_fold).unwrap();
+        let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u_base, &u_fold).unwrap();
+        let hash_new =
+            FpVar::<_>::conditionally_select(&is_base_case, &hash_base, &hash_fold).unwrap();
 
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
