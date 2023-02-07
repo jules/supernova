@@ -369,10 +369,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
-        // Fold new circuit into current one.
-        // TODO: this should just be a method, this abstraction is useless
-        *self += new_circuit;
-
         // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
@@ -385,6 +381,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 }
 
+// TODO: is this the best abstraction? possibly just make a method instead.
 impl<C: StepCircuit<Fq>> Add<R1CS<C>> for R1CS<C> {
     type Output = Self;
 
