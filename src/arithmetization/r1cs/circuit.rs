@@ -3,35 +3,30 @@
 
 use super::StepCircuit;
 use crate::{commit, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, Fr, G1Projective};
+use ark_bls12_381::{Config as Bls12Config, Fq, G1Projective};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{
-        constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig,
-        PoseidonDefaultConfigField, PoseidonSponge,
+        constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge,
     },
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ec::{
-    short_weierstrass::{Projective, SWCurveConfig},
-    AffineRepr, CurveGroup, Group,
-};
-use ark_ff::{BigInt, Field, One, PrimeField, Zero};
+use ark_ec::Group;
+use ark_ff::{One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
     boolean::Boolean,
     eq::EqGadget,
-    fields::{fp::FpVar, nonnative::NonNativeFieldVar, FieldVar},
+    fields::fp::FpVar,
     groups::{curves::short_weierstrass::bls12::G1Var, CurveVar},
     select::CondSelectGadget,
     R1CSVar, ToBitsGadget, ToConstraintFieldGadget,
 };
-use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystemRef, Variable};
+use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystemRef};
 use ark_serialize::CanonicalSerialize;
 use core::ops::{Add, AddAssign};
 use itertools::concat;
 use rayon::prelude::*;
-use sha3::{Digest, Sha3_256};
 use std::ops::Mul;
 
 #[derive(CanonicalSerialize)]

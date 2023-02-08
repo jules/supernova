@@ -4,9 +4,8 @@
 
 pub mod r1cs;
 
-use ark_bls12_381::{Fq, Fr, G1Projective};
+use ark_bls12_381::{Fq, G1Projective};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_ec::short_weierstrass::SWCurveConfig;
 use core::ops::{Add, AddAssign};
 
 /// A foldable circuit representation.

@@ -10,7 +10,7 @@ pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
-use ark_bls12_381::{Fq, Fr, FrConfig, G1Projective};
+use ark_bls12_381::{Fq, G1Projective};
 use ark_crypto_primitives::sponge::{
     poseidon::{
         find_poseidon_ark_and_mds, PoseidonConfig, PoseidonDefaultConfigEntry, PoseidonSponge,
@@ -18,7 +18,6 @@ use ark_crypto_primitives::sponge::{
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ff::{PrimeField, Zero};
-use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
 const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultConfigEntry; 7] = [
     PoseidonDefaultConfigEntry::new(2, 17, 8, 31, 0),
