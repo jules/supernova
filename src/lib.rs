@@ -69,6 +69,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
 
     /// Update a SuperNova proof with a new circuit.
     pub fn update(&mut self, pc: usize) {
+        // Fold in-circuit to produce new Arithmetization.
         let new_latest = self.folded[self.pc].synthesize(
             self.params(),
             self.latest.witness_commitment(),
@@ -78,7 +79,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             self.i,
             &self.constants,
         );
-        // Fold natively
+        // Fold natively.
         self.folded[self.pc] += self.latest;
         self.latest = new_latest;
         self.pc = pc;

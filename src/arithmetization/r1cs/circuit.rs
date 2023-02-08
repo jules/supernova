@@ -486,16 +486,3 @@ fn compute_r(
     sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
     sponge.squeeze_field_elements(1).unwrap()[0]
 }
-
-// Casts a scalar field element to a base field element.
-// Necessary for homogenizing input types in the SuperNova circuit.
-// fn scalar_to_base(scalar: Fr) -> Fq {
-//     let bigint = scalar.into_bigint();
-//     let mut base_limbs = [0u64; 6];
-//     base_limbs[0] = bigint.0[0];
-//     base_limbs[1] = bigint.0[1];
-//     base_limbs[2] = bigint.0[2];
-//     base_limbs[3] = bigint.0[3];
-//     let base_bigint = BigInt::<6>(base_limbs);
-//     Fq::from_bigint(base_bigint).unwrap()
-// }
