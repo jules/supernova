@@ -206,6 +206,10 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.hash
     }
 
+    fn witness_commitment(&self) -> G1Projective {
+        self.comm_witness
+    }
+
     fn is_satisfied(&self) -> bool {
         let num_constraints = self.shape.a.len();
         if self.witness.len() != self.shape.num_witness_variables

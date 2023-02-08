@@ -16,6 +16,9 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     // Returns the latest IO hash.
     fn hash(&self) -> Fq;
 
+    // Returns the current witness commitment.
+    fn witness_commitment(&self) -> G1Projective;
+
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self) -> bool;
 
