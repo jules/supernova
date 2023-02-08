@@ -27,9 +27,6 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     // Returns the circuit metadata used for hashing.
     fn params(&self) -> Fq;
 
-    // Returns the public inputs of the circuit.
-    fn public_inputs(&self) -> &[Fq];
-
     // Returns the circuit output.
     fn output(&self) -> &[Fq];
 

@@ -121,11 +121,8 @@ pub fn verify<A: Arithmetization, const L: usize>(
         proof.latest.z0(),
         proof.latest.output(),
     );
-    if proof.latest.public_inputs()[proof.latest.public_inputs().len() - 2] != hash {
-        return Err(VerificationError::HashMismatch(
-            hash,
-            proof.latest.public_inputs()[proof.latest.public_inputs().len() - 2],
-        ));
+    if proof.latest.hash() != hash {
+        return Err(VerificationError::HashMismatch(hash, proof.latest.hash()));
     }
 
     // Ensure PC is within range.

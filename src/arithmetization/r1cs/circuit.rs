@@ -241,10 +241,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             && self.instance.iter().all(|v| v.is_zero().into())
     }
 
-    fn public_inputs(&self) -> &[Fq] {
-        &self.instance
-    }
-
     fn output(&self) -> &[Fq] {
         &self.output
     }
