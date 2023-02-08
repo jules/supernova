@@ -14,19 +14,19 @@ use ark_crypto_primitives::sponge::{
 };
 use ark_ec::{
     short_weierstrass::{Projective, SWCurveConfig},
-    AffineRepr, CurveGroup,
+    AffineRepr, CurveGroup, Group,
 };
 use ark_ff::{BigInt, Field, One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
     boolean::Boolean,
     eq::EqGadget,
-    fields::{fp::FpVar, nonnative::NonNativeFieldVar},
+    fields::{fp::FpVar, nonnative::NonNativeFieldVar, FieldVar},
     groups::{curves::short_weierstrass::bls12::G1Var, CurveVar},
     select::CondSelectGadget,
     R1CSVar, ToBitsGadget, ToConstraintFieldGadget,
 };
-use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystemRef, Variable};
+use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystemRef, Variable};
 use ark_serialize::CanonicalSerialize;
 use core::ops::{Add, AddAssign};
 use itertools::concat;
@@ -62,11 +62,11 @@ impl From<ConstraintMatrices<Fq>> for SerializableShape {
 }
 
 impl SerializableShape {
-    fn digest(&self, constants: &PoseidonConfig<Fr>) -> Fr {
+    fn digest(&self, constants: &PoseidonConfig<Fq>) -> Fq {
         let mut bytes = vec![];
         self.serialize_compressed(&mut bytes).unwrap();
 
-        let mut sponge = PoseidonSponge::<Fr>::new(&constants);
+        let mut sponge = PoseidonSponge::<Fq>::new(&constants);
         sponge.absorb(&bytes);
         sponge.squeeze_native_field_elements(1)[0]
     }
@@ -77,24 +77,24 @@ fn multiply_vec(
     a: &[Vec<(Fq, usize)>],
     b: &[Vec<(Fq, usize)>],
     c: &[Vec<(Fq, usize)>],
-    z: &[Fr],
-) -> (Vec<Fr>, Vec<Fr>, Vec<Fr>) {
+    z: &[Fq],
+) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
     if z.len() != a.len() {
         // TODO: shouldnt panic here
         panic!("mismatched inputs to shape");
     }
 
-    let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fr]| -> Vec<Fr> {
+    let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
         m.par_iter()
             .map(|row| {
                 row.par_iter()
                     .zip(z)
-                    .fold(Fr::zero, |acc, ((coeff, val), v)| {
-                        acc + Fr::from(coeff.into_bigint().0[0] * (*val as u64)) * v
+                    .fold(Fq::zero, |acc, ((coeff, val), v)| {
+                        acc + coeff * &Fq::from(*val as u64) * v
                     })
-                    .reduce(Fr::zero, |acc, val| acc + val)
+                    .reduce(Fq::zero, |acc, val| acc + val)
             })
-            .collect::<Vec<Fr>>()
+            .collect::<Vec<Fq>>()
     };
 
     let (Az, (Bz, Cz)) = rayon::join(
@@ -117,17 +117,17 @@ pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) comm_witness: G1Projective,
     pub(crate) comm_E: G1Projective,
     pub(crate) comm_T: G1Projective,
-    pub(crate) E: Vec<Fr>,
-    pub(crate) witness: Vec<Fr>,
-    pub(crate) instance: Vec<Fr>,
-    pub(crate) u: Fr,
-    pub(crate) hash: Fr,
+    pub(crate) E: Vec<Fq>,
+    pub(crate) witness: Vec<Fq>,
+    pub(crate) instance: Vec<Fq>,
+    pub(crate) u: Fq,
+    pub(crate) hash: Fq,
     pub(crate) output: Vec<Fq>,
     pub(crate) circuit: C,
 }
 
 impl<C: StepCircuit<Fq>> R1CS<C> {
-    fn commit_t(&self, other: &Self) -> (Vec<Fr>, G1Projective) {
+    fn commit_t(&self, other: &Self) -> (Vec<Fq>, G1Projective) {
         let (az1, bz1, cz1) = multiply_vec(
             &self.shape.a,
             &self.shape.b,
@@ -156,14 +156,14 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             .map(|(((((az1, bz2), az2), bz1), cz1), cz2)| {
                 az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
             })
-            .collect::<Vec<Fr>>();
+            .collect::<Vec<Fq>>();
         let comm_T = commit(&self.generators, &t);
         (t.to_vec(), comm_T)
     }
 
     fn alloc_witnesses(
         &self,
-        params: Fr,
+        params: Fq,
         cs: &mut ConstraintSystemRef<Fq>,
         i: usize,
     ) -> (
@@ -177,7 +177,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         FpVar<Fq>,
         G1Var<Bls12Config>,
     ) {
-        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(scalar_to_base(params))).unwrap();
+        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
         let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
         let z0 = self
             .z0()
@@ -192,8 +192,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let comm_W =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
         let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
-        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(self.u))).unwrap();
-        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(self.hash))).unwrap();
+        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
         let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
         (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
     }
@@ -202,10 +202,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
 impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     type ConstraintSystem = ConstraintSystemRef<Fq>;
 
-    fn digest(&self, constants: &PoseidonConfig<Fr>) -> Fr {
-        let mut sponge = PoseidonSponge::<Fr>::new(&constants);
-        sponge.absorb(&self.witness);
-        sponge.squeeze_native_field_elements(1)[0]
+    fn hash(&self) -> Fq {
+        self.hash
     }
 
     fn is_satisfied(&self) -> bool {
@@ -244,7 +242,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             && self.instance.iter().all(|v| v.is_zero().into())
     }
 
-    fn public_inputs(&self) -> &[Fr] {
+    fn public_inputs(&self) -> &[Fq] {
         &self.instance
     }
 
@@ -252,12 +250,12 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         &self.output
     }
 
-    fn params(&self) -> Fr {
-        Fr::from(self.shape.a.len() as u64) + Fr::from(self.shape.num_witness_variables as u64)
+    fn params(&self) -> Fq {
+        Fq::from(self.shape.a.len() as u64) + Fq::from(self.shape.num_witness_variables as u64)
     }
 
     fn has_crossterms(&self) -> bool {
-        self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != Fr::one()
+        self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != Fq::one()
     }
 
     fn z0(&self) -> Vec<Fq> {
@@ -266,17 +264,17 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
     fn synthesize(
         &mut self,
-        params: Fr,
+        params: Fq,
         latest_witness: G1Projective,
-        latest_hash: Fr,
+        latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,
-        cs: &mut Self::ConstraintSystem,
         constants: &PoseidonConfig<Fq>,
-    ) {
+    ) -> R1CS<C> {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
+        let cs = &mut ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
         let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
         let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
@@ -284,8 +282,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             self.alloc_witnesses(params, cs, i);
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
-        let latest_hash =
-            FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(latest_hash))).unwrap();
+        let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
 
         let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
         let is_base_case = FpVar::<_>::is_eq(&i, &zero).unwrap();
@@ -296,7 +293,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
         let E_base =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
-        let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+        let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
         let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
 
         // Non base case
@@ -375,7 +372,12 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             )
             .value()
             .unwrap())
-        });
+        })
+        .unwrap();
+
+        // Set the new hash for later use.
+        self.hash = hash.value().unwrap();
+        cs.create_circuit()
     }
 }
 
@@ -393,16 +395,16 @@ impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
     fn add_assign(&mut self, other: Self) {
         let (t, comm_T) = self.commit_t(&other);
         let (ark, mds) =
-            find_poseidon_ark_and_mds(Fr::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         let constants = PoseidonConfig::new(8, 31, 17, ark, mds, 2, ark[0].len());
-        let mut sponge = PoseidonSponge::<Fr>::new(&constants);
+        let mut sponge = PoseidonSponge::<Fq>::new(&constants);
         sponge.absorb(
             &[SerializableShape::from(self.shape).digest(&constants)]
                 .into_iter()
                 .chain(self.instance.clone())
                 .chain(other.instance.clone())
                 .chain(t.clone())
-                .collect::<Vec<Fr>>(),
+                .collect::<Vec<Fq>>(),
         );
         let r = sponge.squeeze_native_field_elements(1)[0];
         self.witness
@@ -413,9 +415,9 @@ impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
             .par_iter_mut()
             .zip(other.instance)
             .for_each(|(x1, x2)| *x1 += x2 * r);
-        self.comm_witness += other.comm_witness * r;
+        self.comm_witness += other.comm_witness.mul_bigint(r.into_bigint());
         self.E.par_iter_mut().zip(t).for_each(|(a, b)| *a += r * b);
-        self.comm_E += comm_T * r;
+        self.comm_E += comm_T.mul_bigint(r.into_bigint());
         self.u += r;
         self.comm_T = comm_T;
     }
@@ -483,13 +485,13 @@ fn compute_r(
 
 // Casts a scalar field element to a base field element.
 // Necessary for homogenizing input types in the SuperNova circuit.
-fn scalar_to_base(scalar: Fr) -> Fq {
-    let bigint = scalar.into_bigint();
-    let mut base_limbs = [0u64; 6];
-    base_limbs[0] = bigint.0[0];
-    base_limbs[1] = bigint.0[1];
-    base_limbs[2] = bigint.0[2];
-    base_limbs[3] = bigint.0[3];
-    let base_bigint = BigInt::<6>(base_limbs);
-    Fq::from_bigint(base_bigint).unwrap()
-}
+// fn scalar_to_base(scalar: Fr) -> Fq {
+//     let bigint = scalar.into_bigint();
+//     let mut base_limbs = [0u64; 6];
+//     base_limbs[0] = bigint.0[0];
+//     base_limbs[1] = bigint.0[1];
+//     base_limbs[2] = bigint.0[2];
+//     base_limbs[3] = bigint.0[3];
+//     let base_bigint = BigInt::<6>(base_limbs);
+//     Fq::from_bigint(base_bigint).unwrap()
+// }

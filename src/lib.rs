@@ -69,30 +69,34 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
 
     /// Update a SuperNova proof with a new circuit.
     pub fn update(&mut self, pc: usize) {
-        let mut cs = ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
-        self.folded[self.pc].synthesize(
+        let new_latest = self.folded[self.pc].synthesize(
             self.params(),
             self.latest.witness_commitment(),
             self.latest.hash(),
             self.pc,
             pc,
             self.i,
-            &mut cs,
             &self.constants,
         );
-        // Create u_i+1, w_i+1
         // Fold natively
         self.folded[self.pc] += self.latest;
-        // self.latest = new
+        self.latest = new_latest;
         self.pc = pc;
         self.i += 1;
+    }
+
+    fn params(&self) -> Fq {
+        self.folded
+            .iter()
+            .map(|p| p.params())
+            .fold(Fq::zero(), |acc, x| acc + x)
     }
 }
 
 /// Verify a SuperNova proof.
 pub fn verify<A: Arithmetization, const L: usize>(
     proof: &Proof<A, L>,
-) -> Result<(), VerificationError<Fr>> {
+) -> Result<(), VerificationError<Fq>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -152,31 +156,26 @@ pub fn verify<A: Arithmetization, const L: usize>(
 }
 
 pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
-    constants: &PoseidonConfig<Fr>,
+    constants: &PoseidonConfig<Fq>,
     folded: &[A; L],
     i: usize,
     pc: usize,
-    z0: Vec<Fr>,
-    output: &[Fr],
-) -> Fr {
+    z0: Vec<Fq>,
+    output: &[Fq],
+) -> Fq {
     // TODO: validate parameters
-    let mut sponge = PoseidonSponge::<Fr>::new(&constants);
+    let mut sponge = PoseidonSponge::<Fq>::new(&constants);
     sponge.absorb(
         &[folded
             .iter()
-            .fold(Fr::zero(), |acc, pair| acc + pair.params())]
+            .fold(Fq::zero(), |acc, pair| acc + pair.params())]
         .into_iter()
-        .chain([Fr::from(i as u64)])
-        .chain([Fr::from(pc as u64)])
+        .chain([Fq::from(i as u64)])
+        .chain([Fq::from(pc as u64)])
         .chain(z0)
         .chain(output.to_vec())
-        .chain(
-            [folded
-                .iter()
-                .fold(Fr::zero(), |acc, pair| acc + pair.digest(constants))]
-            .into_iter(),
-        )
-        .collect::<Vec<Fr>>(),
+        .chain([folded[pc].hash()])
+        .collect::<Vec<Fq>>(),
     );
     sponge.squeeze_native_field_elements(1)[0]
 }

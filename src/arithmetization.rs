@@ -13,8 +13,8 @@ use core::ops::{Add, AddAssign};
 pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     type ConstraintSystem;
 
-    // Returns a digest of the circuit.
-    fn digest(&self, constants: &PoseidonConfig<Fr>) -> Fr;
+    // Returns the latest IO hash.
+    fn hash(&self) -> Fq;
 
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self) -> bool;
@@ -23,10 +23,10 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     fn is_zero(&self) -> bool;
 
     // Returns the circuit metadata used for hashing.
-    fn params(&self) -> Fr;
+    fn params(&self) -> Fq;
 
     // Returns the public inputs of the circuit.
-    fn public_inputs(&self) -> &[Fr];
+    fn public_inputs(&self) -> &[Fq];
 
     // Returns the circuit output.
     fn output(&self) -> &[Fq];
@@ -40,13 +40,12 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
 
     fn synthesize(
         &mut self,
-        params: Fr,
+        params: Fq,
         latest_witness: G1Projective,
-        latest_hash: Fr,
+        latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,
-        cs: &mut Self::ConstraintSystem,
         constants: &PoseidonConfig<Fq>,
-    );
+    ) -> Self;
 }
