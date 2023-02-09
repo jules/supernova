@@ -36,6 +36,7 @@ pub trait Arithmetization: Sized {
     // as many one scalars as there are inputs.
     fn z0(&self) -> Vec<Fq>;
 
+    #[allow(clippy::too_many_arguments)]
     fn synthesize(
         &mut self,
         params: Fq,

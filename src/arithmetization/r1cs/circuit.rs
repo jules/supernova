@@ -58,7 +58,7 @@ impl SerializableShape {
         let mut bytes = vec![];
         self.serialize_compressed(&mut bytes).unwrap();
 
-        let mut sponge = PoseidonSponge::<Fq>::new(&constants);
+        let mut sponge = PoseidonSponge::<Fq>::new(constants);
         sponge.absorb(&bytes);
         sponge.squeeze_native_field_elements(1)[0]
     }
@@ -148,10 +148,11 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
                 az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
             })
             .collect::<Vec<Fq>>();
-        let comm_T = commit(&generators, &t);
+        let comm_T = commit(generators, &t);
         (t.to_vec(), comm_T)
     }
 
+    #[allow(clippy::type_complexity)]
     fn alloc_witnesses(
         &self,
         params: Fq,
@@ -172,12 +173,12 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
         let z0 = self
             .z0()
-            .into_iter()
+            .iter()
             .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
         let output = self
             .output()
-            .into_iter()
+            .iter()
             .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
         let comm_W =
@@ -227,14 +228,13 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         }
 
         // Verify if comm_E and comm_witness are commitments to E and witness.
-        let comm_witness = commit(&generators, &self.witness);
-        let comm_E = commit(&generators, &self.E);
+        let comm_witness = commit(generators, &self.witness);
+        let comm_E = commit(generators, &self.E);
         self.comm_witness == comm_witness && self.comm_E == comm_E
     }
 
     fn is_zero(&self) -> bool {
-        self.witness.iter().all(|v| v.is_zero().into())
-            && self.instance.iter().all(|v| v.is_zero().into())
+        self.witness.iter().all(|v| v.is_zero()) && self.instance.iter().all(|v| v.is_zero())
     }
 
     fn output(&self) -> &[Fq] {
@@ -246,7 +246,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 
     fn has_crossterms(&self) -> bool {
-        self.E.iter().any(|v| (!v.is_zero()).into()) && self.u != Fq::one()
+        self.E.iter().any(|v| !v.is_zero()) && self.u != Fq::one()
     }
 
     fn z0(&self) -> Vec<Fq> {
@@ -291,13 +291,13 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Non base case
         let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         let hash = compute_io_hash(
-            &constants, &mut cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
+            constants, &mut cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
         );
 
         // Fold in circuit
         // Compute r
         let r = compute_r(
-            &constants,
+            constants,
             &mut cs,
             &params,
             &comm_W,
@@ -341,7 +341,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .iter()
             .zip(&z0)
             .map(|(v_output, v_0)| {
-                FpVar::<_>::conditionally_select(&is_base_case, &v_0, &v_output).unwrap()
+                FpVar::<_>::conditionally_select(&is_base_case, v_0, v_output).unwrap()
             })
             .collect::<Vec<FpVar<Fq>>>();
 
@@ -360,8 +360,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
-                &constants, &mut cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new,
-                &u_new, &hash_new,
+                constants, &mut cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new, &u_new,
+                &hash_new,
             )
             .value()
             .unwrap())
@@ -374,7 +374,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 
     fn fold(&mut self, other: &Self, constants: &PoseidonConfig<Fq>, generators: &[G1Projective]) {
-        let (t, comm_T) = self.commit_t(&other, generators);
+        let (t, comm_T) = self.commit_t(other, generators);
         let mut sponge = PoseidonSponge::<Fq>::new(constants);
         sponge.absorb(
             &[SerializableShape::from(self.shape.clone()).digest(constants)]
@@ -424,6 +424,7 @@ fn create_circuit<C: StepCircuit<Fq>>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_io_hash(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
@@ -454,6 +455,7 @@ fn compute_io_hash(
     sponge.squeeze_field_elements(1).unwrap().remove(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_r(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
