@@ -20,9 +20,6 @@ pub trait Arithmetization: Sized {
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self, generators: &[G1Projective]) -> bool;
 
-    // Checks if the arithmetization is equivalent to the base case.
-    fn is_zero(&self) -> bool;
-
     // Returns the circuit metadata used for hashing.
     fn params(&self) -> Fq;
 

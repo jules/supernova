@@ -65,7 +65,7 @@ impl SerializableShape {
 }
 
 #[allow(clippy::type_complexity)]
-fn multiply_vec(
+fn r1cs_matrix_vec_product(
     a: &[Vec<(Fq, usize)>],
     b: &[Vec<(Fq, usize)>],
     c: &[Vec<(Fq, usize)>],
@@ -119,13 +119,13 @@ pub struct R1CS<C: StepCircuit<Fq>> {
 
 impl<C: StepCircuit<Fq>> R1CS<C> {
     fn commit_t(&self, other: &Self, generators: &[G1Projective]) -> (Vec<Fq>, G1Projective) {
-        let (az1, bz1, cz1) = multiply_vec(
+        let (az1, bz1, cz1) = r1cs_matrix_vec_product(
             &self.shape.a,
             &self.shape.b,
             &self.shape.c,
             &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
         );
-        let (az2, bz2, cz2) = multiply_vec(
+        let (az2, bz2, cz2) = r1cs_matrix_vec_product(
             &self.shape.a,
             &self.shape.b,
             &self.shape.c,
@@ -217,7 +217,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             vec![self.u],
             self.instance.clone(),
         ]);
-        let (az, bz, cz) = multiply_vec(&self.shape.a, &self.shape.b, &self.shape.c, &z);
+        let (az, bz, cz) = r1cs_matrix_vec_product(&self.shape.a, &self.shape.b, &self.shape.c, &z);
         if az.len() != num_constraints || bz.len() != num_constraints || cz.len() != num_constraints
         {
             return false;
@@ -231,10 +231,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let comm_witness = commit(generators, &self.witness);
         let comm_E = commit(generators, &self.E);
         self.comm_witness == comm_witness && self.comm_E == comm_E
-    }
-
-    fn is_zero(&self) -> bool {
-        self.witness.iter().all(|v| v.is_zero()) && self.instance.iter().all(|v| v.is_zero())
     }
 
     fn output(&self) -> &[Fq] {

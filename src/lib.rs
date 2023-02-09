@@ -33,6 +33,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
     pub fn new(folded: [A; L], latest: A, generators: Vec<G1Projective>) -> Self {
+        // TODO: these parameters might not be optimal/secure for Fq.
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         Self {
@@ -80,11 +81,11 @@ pub fn verify<A: Arithmetization, const L: usize>(
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
-        if proof.folded.iter().any(|pair| !pair.is_zero()) {
+        if proof.folded.iter().any(|pair| !pair.has_crossterms()) {
             return Err(VerificationError::ExpectedBaseCase);
         }
 
-        if !proof.latest.is_zero() {
+        if proof.latest.has_crossterms() {
             return Err(VerificationError::ExpectedBaseCase);
         }
 
