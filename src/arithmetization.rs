@@ -6,10 +6,9 @@ pub mod r1cs;
 
 use ark_bls12_381::{Fq, G1Projective};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use core::ops::{Add, AddAssign};
 
 /// A foldable circuit representation.
-pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
+pub trait Arithmetization: Sized {
     type ConstraintSystem;
 
     // Returns the latest IO hash.
@@ -19,7 +18,7 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
     fn witness_commitment(&self) -> G1Projective;
 
     // Checks if the arithmetization is correct.
-    fn is_satisfied(&self) -> bool;
+    fn is_satisfied(&self, generators: &[G1Projective]) -> bool;
 
     // Checks if the arithmetization is equivalent to the base case.
     fn is_zero(&self) -> bool;
@@ -46,5 +45,8 @@ pub trait Arithmetization: Add<Self> + AddAssign<Self> + Sized {
         new_pc: usize,
         i: usize,
         constants: &PoseidonConfig<Fq>,
+        generators: &[G1Projective],
     ) -> Self;
+
+    fn fold(&mut self, other: &Self, constants: &PoseidonConfig<Fq>, generators: &[G1Projective]);
 }

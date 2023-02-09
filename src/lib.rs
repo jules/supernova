@@ -57,7 +57,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         Self {
-            constants: PoseidonConfig::new(8, 31, 17, ark, mds, 2, ark[0].len()),
+            constants: PoseidonConfig::new(8, 31, 17, ark.clone(), mds, 2, ark[0].len()),
             generators,
             folded,
             latest,
@@ -77,9 +77,10 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             pc,
             self.i,
             &self.constants,
+            &self.generators,
         );
         // Fold natively.
-        self.folded[self.pc] += self.latest;
+        self.folded[self.pc].fold(&self.latest, &self.constants, &self.generators);
         self.latest = new_latest;
         self.pc = pc;
         self.i += 1;
@@ -139,13 +140,17 @@ pub fn verify<A: Arithmetization, const L: usize>(
     }
 
     // Ensure all folded instance/witness pairs are satisfied.
-    if proof.folded.iter().any(|pair| !pair.is_satisfied()) {
+    if proof
+        .folded
+        .iter()
+        .any(|pair| !pair.is_satisfied(&proof.generators))
+    {
         return Err(VerificationError::UnsatisfiedCircuit);
     }
 
     println!("folded is fine");
     // Ensure the latest instance/witness pair is satisfied.
-    if !proof.latest.is_satisfied() {
+    if !proof.latest.is_satisfied(&proof.generators) {
         return Err(VerificationError::UnsatisfiedCircuit);
     }
 
@@ -161,7 +166,7 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
     output: &[Fq],
 ) -> Fq {
     // TODO: validate parameters
-    let mut sponge = PoseidonSponge::<Fq>::new(&constants);
+    let mut sponge = PoseidonSponge::<Fq>::new(constants);
     sponge.absorb(
         &[folded
             .iter()

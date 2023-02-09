@@ -6,9 +6,7 @@ use crate::{commit, Arithmetization};
 use ark_bls12_381::{Config as Bls12Config, Fq, G1Projective};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
-    poseidon::{
-        constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge,
-    },
+    poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ec::Group;
@@ -24,10 +22,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystemRef};
 use ark_serialize::CanonicalSerialize;
-use core::ops::{Add, AddAssign};
+use core::ops::{Add, Mul};
 use itertools::concat;
 use rayon::prelude::*;
-use std::ops::Mul;
 
 #[derive(CanonicalSerialize)]
 pub struct SerializableShape {
@@ -107,7 +104,6 @@ fn multiply_vec(
 
 #[derive(Clone)]
 pub struct R1CS<C: StepCircuit<Fq>> {
-    pub(crate) generators: Vec<G1Projective>,
     pub(crate) shape: ConstraintMatrices<Fq>,
     pub(crate) comm_witness: G1Projective,
     pub(crate) comm_E: G1Projective,
@@ -122,7 +118,7 @@ pub struct R1CS<C: StepCircuit<Fq>> {
 }
 
 impl<C: StepCircuit<Fq>> R1CS<C> {
-    fn commit_t(&self, other: &Self) -> (Vec<Fq>, G1Projective) {
+    fn commit_t(&self, other: &Self, generators: &[G1Projective]) -> (Vec<Fq>, G1Projective) {
         let (az1, bz1, cz1) = multiply_vec(
             &self.shape.a,
             &self.shape.b,
@@ -152,7 +148,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
                 az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
             })
             .collect::<Vec<Fq>>();
-        let comm_T = commit(&self.generators, &t);
+        let comm_T = commit(&generators, &t);
         (t.to_vec(), comm_T)
     }
 
@@ -205,7 +201,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.comm_witness
     }
 
-    fn is_satisfied(&self) -> bool {
+    fn is_satisfied(&self, generators: &[G1Projective]) -> bool {
         let num_constraints = self.shape.a.len();
         if self.witness.len() != self.shape.num_witness_variables
             || self.E.len() != num_constraints
@@ -231,8 +227,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         }
 
         // Verify if comm_E and comm_witness are commitments to E and witness.
-        let comm_witness = commit(&self.generators, &self.witness);
-        let comm_E = commit(&self.generators, &self.E);
+        let comm_witness = commit(&generators, &self.witness);
+        let comm_E = commit(&generators, &self.E);
         self.comm_witness == comm_witness && self.comm_E == comm_E
     }
 
@@ -266,15 +262,16 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         new_pc: usize,
         i: usize,
         constants: &PoseidonConfig<Fq>,
+        generators: &[G1Projective],
     ) -> R1CS<C> {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
-        let cs = &mut ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
+        let mut cs = ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
         let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
         let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
         let (params, i, z0, output, comm_W, comm_E, u, hash, T) =
-            self.alloc_witnesses(params, cs, i);
+            self.alloc_witnesses(params, &mut cs, i);
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
         let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
@@ -294,14 +291,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Non base case
         let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         let hash = compute_io_hash(
-            &constants, cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
+            &constants, &mut cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
         );
 
         // Fold in circuit
         // Compute r
         let r = compute_r(
             &constants,
-            cs,
+            &mut cs,
             &params,
             &comm_W,
             &comm_E,
@@ -342,7 +339,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         let new_input = output
             .iter()
-            .zip(z0)
+            .zip(&z0)
             .map(|(v_output, v_0)| {
                 FpVar::<_>::conditionally_select(&is_base_case, &v_0, &v_output).unwrap()
             })
@@ -350,6 +347,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         let output = self
             .circuit
+            .clone()
             .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
@@ -362,8 +360,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
-                &constants, cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new, &u_new,
-                &hash_new,
+                &constants, &mut cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new,
+                &u_new, &hash_new,
             )
             .value()
             .unwrap())
@@ -372,29 +370,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         // Set the new hash for later use.
         self.hash = hash.value().unwrap();
-        cs.create_circuit()
+        create_circuit(cs, generators, hash.value().unwrap(), self.circuit.clone())
     }
-}
 
-// TODO: is this the best abstraction? possibly just make a method instead.
-impl<C: StepCircuit<Fq>> Add<R1CS<C>> for R1CS<C> {
-    type Output = Self;
-
-    fn add(mut self, other: Self) -> Self {
-        self += other;
-        self
-    }
-}
-
-impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
-    fn add_assign(&mut self, other: Self) {
-        let (t, comm_T) = self.commit_t(&other);
-        let (ark, mds) =
-            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
-        let constants = PoseidonConfig::new(8, 31, 17, ark, mds, 2, ark[0].len());
-        let mut sponge = PoseidonSponge::<Fq>::new(&constants);
+    fn fold(&mut self, other: &Self, constants: &PoseidonConfig<Fq>, generators: &[G1Projective]) {
+        let (t, comm_T) = self.commit_t(&other, generators);
+        let mut sponge = PoseidonSponge::<Fq>::new(constants);
         sponge.absorb(
-            &[SerializableShape::from(self.shape).digest(&constants)]
+            &[SerializableShape::from(self.shape.clone()).digest(constants)]
                 .into_iter()
                 .chain(self.instance.clone())
                 .chain(other.instance.clone())
@@ -404,17 +387,40 @@ impl<C: StepCircuit<Fq>> AddAssign<R1CS<C>> for R1CS<C> {
         let r = sponge.squeeze_native_field_elements(1)[0];
         self.witness
             .par_iter_mut()
-            .zip(other.witness)
-            .for_each(|(w1, w2)| *w1 += w2 * r);
+            .zip(&other.witness)
+            .for_each(|(w1, w2)| *w1 += *w2 * r);
         self.instance
             .par_iter_mut()
-            .zip(other.instance)
-            .for_each(|(x1, x2)| *x1 += x2 * r);
+            .zip(&other.instance)
+            .for_each(|(x1, x2)| *x1 += *x2 * r);
         self.comm_witness += other.comm_witness.mul_bigint(r.into_bigint());
         self.E.par_iter_mut().zip(t).for_each(|(a, b)| *a += r * b);
         self.comm_E += comm_T.mul_bigint(r.into_bigint());
         self.u += r;
         self.comm_T = comm_T;
+    }
+}
+
+fn create_circuit<C: StepCircuit<Fq>>(
+    cs: ConstraintSystemRef<Fq>,
+    generators: &[G1Projective],
+    hash: Fq,
+    circuit: C,
+) -> R1CS<C> {
+    let cs = cs.into_inner().unwrap();
+    let matrices = cs.to_matrices().unwrap();
+    R1CS {
+        shape: matrices.clone(),
+        comm_witness: commit(generators, &cs.witness_assignment),
+        comm_E: G1Projective::zero(),
+        comm_T: G1Projective::zero(),
+        E: vec![Fq::zero(); matrices.num_constraints],
+        witness: cs.witness_assignment.clone(),
+        instance: cs.instance_assignment.clone(),
+        u: Fq::one(),
+        hash,
+        output: vec![],
+        circuit,
     }
 }
 
@@ -431,7 +437,7 @@ fn compute_io_hash(
     u: &FpVar<Fq>,
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
-    let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), &constants);
+    let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();
@@ -445,7 +451,7 @@ fn compute_io_hash(
         .unwrap();
     sponge.absorb(&u).unwrap();
     sponge.absorb(&hash).unwrap();
-    sponge.squeeze_field_elements(1).unwrap()[0]
+    sponge.squeeze_field_elements(1).unwrap().remove(0)
 }
 
 fn compute_r(
@@ -460,7 +466,7 @@ fn compute_r(
     latest_hash: &FpVar<Fq>,
     T: &G1Var<Bls12Config>,
 ) -> FpVar<Fq> {
-    let sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
+    let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
     sponge.absorb(params).unwrap();
     sponge
         .absorb(&comm_W.to_constraint_field().unwrap())
@@ -475,5 +481,5 @@ fn compute_r(
         .unwrap();
     sponge.absorb(latest_hash).unwrap();
     sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
-    sponge.squeeze_field_elements(1).unwrap()[0]
+    sponge.squeeze_field_elements(1).unwrap().remove(0)
 }
