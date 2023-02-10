@@ -262,6 +262,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         })
         .unwrap();
 
+        cs.finalize();
+
         // Set the new output for later use.
         self.output = output
             .iter()
@@ -365,10 +367,12 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             constants,
             generators,
         );
-        r1cs.shape = circuit.shape;
         // Reset mutated variables
         r1cs.output = z0;
         r1cs.hash = Fq::zero();
+        r1cs.witness = vec![Fq::zero(); circuit.witness.len()];
+        r1cs.instance = vec![Fq::zero(); circuit.instance.len()];
+        r1cs.shape = circuit.shape;
         r1cs
     }
 
@@ -422,7 +426,7 @@ fn create_circuit<C: StepCircuit<Fq>>(
         comm_T: G1Affine::zero(),
         E: vec![Fq::zero(); matrices.num_constraints],
         witness: cs.witness_assignment.clone(),
-        instance: cs.instance_assignment.clone(),
+        instance: cs.instance_assignment[1..].to_vec(),
         u: Fq::one(),
         hash,
         output: vec![],
@@ -437,19 +441,11 @@ fn r1cs_matrix_vec_product(
     c: &[Vec<(Fq, usize)>],
     z: &[Fq],
 ) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
-    if z.len() != a.len() {
-        // TODO: shouldnt panic here
-        panic!("mismatched inputs to shape");
-    }
-
     let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
         m.par_iter()
             .map(|row| {
                 row.par_iter()
-                    .zip(z)
-                    .fold(Fq::zero, |acc, ((coeff, val), v)| {
-                        acc + coeff * &Fq::from(*val as u64) * v
-                    })
+                    .fold(Fq::zero, |acc, (coeff, val)| acc + coeff * &z[*val])
                     .reduce(Fq::zero, |acc, val| acc + val)
             })
             .collect::<Vec<Fq>>()
