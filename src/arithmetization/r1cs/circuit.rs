@@ -154,8 +154,24 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
         let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
-        let (params, i, z0, output, comm_W, comm_E, u, hash, T) =
-            self.alloc_witnesses(params, &mut cs, i);
+        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
+        let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
+        let z0 = self
+            .z0()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
+        let output = self
+            .output()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
+        let comm_W =
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
+        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
+        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
+        let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
         let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
@@ -235,12 +251,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
-        // Set the new output for later use.
-        self.output = output
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>();
-
         // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
@@ -251,6 +261,12 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .unwrap())
         })
         .unwrap();
+
+        // Set the new output for later use.
+        self.output = output
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>();
 
         // Set the new hash for later use.
         self.hash = hash.value().unwrap();
@@ -305,6 +321,57 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 }
 
 impl<C: StepCircuit<Fq>> R1CS<C> {
+    pub fn new(
+        z0: Vec<Fq>,
+        circuit: C,
+        constants: &PoseidonConfig<Fq>,
+        generators: &[G1Affine],
+    ) -> Self {
+        let empty_shape = ConstraintMatrices::<Fq> {
+            num_instance_variables: 0,
+            num_witness_variables: 0,
+            num_constraints: 0,
+            a_num_non_zero: 0,
+            b_num_non_zero: 0,
+            c_num_non_zero: 0,
+
+            a: vec![],
+            b: vec![],
+            c: vec![],
+        };
+
+        let mut r1cs = Self {
+            shape: empty_shape,
+            comm_witness: G1Affine::zero(),
+            comm_E: G1Affine::zero(),
+            comm_T: G1Affine::zero(),
+            E: vec![],
+            witness: vec![],
+            instance: vec![],
+            u: Fq::one(),
+            hash: Fq::zero(),
+            output: z0.clone(),
+            circuit,
+        };
+
+        // TODO: check if we need to set pc
+        let circuit = r1cs.synthesize(
+            Fq::zero(),
+            G1Affine::zero(),
+            Fq::zero(),
+            0,
+            0,
+            0,
+            constants,
+            generators,
+        );
+        r1cs.shape = circuit.shape;
+        // Reset mutated variables
+        r1cs.output = z0;
+        r1cs.hash = Fq::zero();
+        r1cs
+    }
+
     fn commit_t(&self, other: &Self, generators: &[G1Affine]) -> (Vec<Fq>, G1Affine) {
         let (az1, bz1, cz1) = r1cs_matrix_vec_product(
             &self.shape.a,
@@ -337,44 +404,6 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             .collect::<Vec<Fq>>();
         let comm_T = commit(generators, &t);
         (t.to_vec(), comm_T)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn alloc_witnesses(
-        &self,
-        params: Fq,
-        cs: &mut ConstraintSystemRef<Fq>,
-        i: usize,
-    ) -> (
-        FpVar<Fq>,
-        FpVar<Fq>,
-        Vec<FpVar<Fq>>,
-        Vec<FpVar<Fq>>,
-        G1Var<Bls12Config>,
-        G1Var<Bls12Config>,
-        FpVar<Fq>,
-        FpVar<Fq>,
-        G1Var<Bls12Config>,
-    ) {
-        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
-        let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
-        let z0 = self
-            .z0()
-            .iter()
-            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
-            .collect::<Vec<_>>();
-        let output = self
-            .output()
-            .iter()
-            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
-            .collect::<Vec<_>>();
-        let comm_W =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
-        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
-        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
-        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
-        let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
-        (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
     }
 }
 

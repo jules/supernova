@@ -171,13 +171,14 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
 mod tests {
     use super::*;
     use crate::r1cs::{StepCircuit, R1CS};
+    use ark_ff::One;
     use ark_r1cs_std::{
         alloc::AllocVar,
         eq::EqGadget,
         fields::{fp::FpVar, FieldVar},
         R1CSVar,
     };
-    use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef, Result};
+    use ark_relations::r1cs::{ConstraintSystemRef, Result};
     use core::{
         marker::PhantomData,
         ops::{Add, Mul},
@@ -195,11 +196,11 @@ mod tests {
             z: &[FpVar<F>],
         ) -> Result<Vec<FpVar<F>>> {
             // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the input and output.
-            let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value().unwrap()))?;
+            let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value()?))?;
             let x_sq = x.square()?;
             let x_cu = x_sq.mul(&x);
             let y = FpVar::<_>::new_witness(cs.clone(), || {
-                Ok(x_cu.value().unwrap() + x.value().unwrap() + F::from(5u64))
+                Ok(x_cu.value()? + x.value()? + F::from(5u64))
             })?;
             x_cu.add(&x)
                 .add(&FpVar::<_>::one())
@@ -207,7 +208,7 @@ mod tests {
                 .add(&FpVar::<_>::one())
                 .add(&FpVar::<_>::one())
                 .add(&FpVar::<_>::one())
-                .enforce_equal(&y);
+                .enforce_equal(&y)?;
 
             Ok(vec![y])
         }
@@ -215,9 +216,13 @@ mod tests {
 
     #[test]
     fn test_single_circuit() {
-        let base = R1CS::new();
-        // TODO: can we infer generator size
         let generators = create_generators(1000);
+        let circuit = CubicCircuit::<Fq>::default();
+        let (ark, mds) =
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+        let constants = PoseidonConfig::new(8, 31, 17, ark.clone(), mds, 2, ark[0].len());
+        let base = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
+        // TODO: can we infer generator size
 
         let folded = [base.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
