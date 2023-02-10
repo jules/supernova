@@ -150,7 +150,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     ) -> R1CS<C> {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
-        let mut cs = ConstraintSystemRef::<Fq>::new(ConstraintSystem::new());
+        let mut cs = ConstraintSystem::<Fq>::new_ref();
         let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
         let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
@@ -328,7 +328,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         generators: &[G1Affine],
     ) -> Self {
         let empty_shape = ConstraintMatrices::<Fq> {
-            num_instance_variables: 0,
+            num_instance_variables: z0.len(),
             num_witness_variables: 0,
             num_constraints: 0,
             a_num_non_zero: 0,
@@ -413,8 +413,8 @@ fn create_circuit<C: StepCircuit<Fq>>(
     hash: Fq,
     circuit: C,
 ) -> R1CS<C> {
-    let cs = cs.into_inner().unwrap();
     let matrices = cs.to_matrices().unwrap();
+    let cs = cs.borrow().unwrap();
     R1CS {
         shape: matrices.clone(),
         comm_witness: commit(generators, &cs.witness_assignment),

@@ -37,7 +37,15 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
         Self {
-            constants: PoseidonConfig::new(8, 31, 17, ark.clone(), mds, 2, ark[0].len()),
+            constants: PoseidonConfig {
+                full_rounds: 8,
+                partial_rounds: 31,
+                alpha: 17,
+                ark,
+                mds,
+                rate: 2,
+                capacity: 1,
+            },
             generators,
             folded,
             latest,
@@ -195,7 +203,8 @@ mod tests {
             cs: ConstraintSystemRef<F>,
             z: &[FpVar<F>],
         ) -> Result<Vec<FpVar<F>>> {
-            // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the input and output.
+            // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the
+            // input and output.
             let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value()?))?;
             let x_sq = x.square()?;
             let x_cu = x_sq.mul(&x);
@@ -216,13 +225,21 @@ mod tests {
 
     #[test]
     fn test_single_circuit() {
+        // TODO: can we infer generator size
         let generators = create_generators(1000);
         let circuit = CubicCircuit::<Fq>::default();
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
-        let constants = PoseidonConfig::new(8, 31, 17, ark.clone(), mds, 2, ark[0].len());
+        let constants = PoseidonConfig {
+            full_rounds: 8,
+            partial_rounds: 31,
+            alpha: 17,
+            ark,
+            mds,
+            rate: 2,
+            capacity: 1,
+        };
         let base = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
-        // TODO: can we infer generator size
 
         let folded = [base.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
