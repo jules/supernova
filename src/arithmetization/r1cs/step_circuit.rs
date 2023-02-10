@@ -5,7 +5,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, Result};
 pub trait StepCircuit<F: PrimeField>: Clone {
     /// Drives generation of new constraints inside `cs`.
     fn generate_constraints(
-        self,
+        &self,
         cs: ConstraintSystemRef<F>,
         z: &[FpVar<F>],
     ) -> Result<Vec<FpVar<F>>>;

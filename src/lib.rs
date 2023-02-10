@@ -170,47 +170,44 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        arithmetization::Circuit,
-        r1cs::{ProvingAssignment, R1CS},
+    use crate::r1cs::{StepCircuit, R1CS};
+    use ark_r1cs_std::{
+        alloc::AllocVar,
+        eq::EqGadget,
+        fields::{fp::FpVar, FieldVar},
+        R1CSVar,
     };
-    use bellperson::{gadgets::num::AllocatedNum, SynthesisError};
-    use group::ff::PrimeField;
-    use pasta_curves::pallas::Point;
+    use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef, Result};
+    use core::{
+        marker::PhantomData,
+        ops::{Add, Mul},
+    };
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct CubicCircuit<F: PrimeField> {
         _p: PhantomData<F>,
     }
 
-    impl<F: PrimeField> Circuit<F> for CubicCircuit<F> {
-        fn synthesize<CS: ConstraintSystem<F>>(
+    impl<F: PrimeField> StepCircuit<F> for CubicCircuit<F> {
+        fn generate_constraints(
             &self,
-            cs: &mut CS,
-            z: &[F],
-        ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
+            cs: ConstraintSystemRef<F>,
+            z: &[FpVar<F>],
+        ) -> Result<Vec<FpVar<F>>> {
             // Consider a cubic equation: `x^3 + x + 5 = y`, where `x` and `y` are respectively the input and output.
-            let x = AllocatedNum::alloc_input(cs.namespace(|| "x"), || Ok(z[0]))?;
-            let x_sq = x.square(cs.namespace(|| "x_sq"))?;
-            let x_cu = x_sq.mul(cs.namespace(|| "x_cu"), &x)?;
-            let y = AllocatedNum::alloc(cs.namespace(|| "y"), || {
-                Ok(x_cu.get_value().unwrap() + x.get_value().unwrap() + F::from(5u64))
+            let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value().unwrap()))?;
+            let x_sq = x.square()?;
+            let x_cu = x_sq.mul(&x);
+            let y = FpVar::<_>::new_witness(cs.clone(), || {
+                Ok(x_cu.value().unwrap() + x.value().unwrap() + F::from(5u64))
             })?;
-
-            cs.enforce(
-                || "y = x^3 + x + 5",
-                |lc| {
-                    lc + x_cu.get_variable()
-                        + x.get_variable()
-                        + CS::one()
-                        + CS::one()
-                        + CS::one()
-                        + CS::one()
-                        + CS::one()
-                },
-                |lc| lc + CS::one(),
-                |lc| lc + y.get_variable(),
-            );
+            x_cu.add(&x)
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .enforce_equal(&y);
 
             Ok(vec![y])
         }
@@ -218,27 +215,17 @@ mod tests {
 
     #[test]
     fn test_single_circuit() {
-        let base = CubicCircuit::default();
-        let mut cs = ProvingAssignment::default();
-        let z0 = vec![<Point as CurveExt>::ScalarField::zero()];
-        cs.set_output(z0.clone());
-        let output = base.synthesize(&mut cs, z0.as_slice()).unwrap();
+        let base = R1CS::new();
         // TODO: can we infer generator size
         let generators = create_generators(1000);
-        let r1cs = cs.create_circuit(&generators, constants.clone());
 
-        let folded = [r1cs.clone(); 1];
-        let mut proof = Proof::<Point, R1CS<Point>, 1>::new(folded, r1cs.clone());
-        proof.update(r1cs.clone(), 0);
+        let folded = [base.clone(); 1];
+        let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
+        proof.update(0);
         verify(&proof).unwrap();
 
         // Update with a next step
-        let mut cs = ProvingAssignment::default();
-        let _ = base
-            .synthesize(&mut cs, &[output[0].get_value().unwrap()])
-            .unwrap();
-        let r1cs2 = cs.create_circuit(&generators, constants);
-        proof.update(r1cs2, 0);
+        proof.update(0);
         verify(&proof).unwrap();
     }
 
