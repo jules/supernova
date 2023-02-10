@@ -21,7 +21,7 @@ pub trait Arithmetization: Sized {
     fn is_satisfied(&self, generators: &[G1Affine]) -> bool;
 
     // Returns the circuit metadata used for hashing.
-    fn params(&self) -> Fq;
+    fn params(&self, constants: &PoseidonConfig<Fq>) -> Fq;
 
     // Returns the circuit output.
     fn output(&self) -> &[Fq];

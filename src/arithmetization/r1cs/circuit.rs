@@ -35,8 +35,8 @@ pub struct SerializableShape {
     C: Vec<Vec<Fq>>,
 }
 
-impl From<ConstraintMatrices<Fq>> for SerializableShape {
-    fn from(v: ConstraintMatrices<Fq>) -> Self {
+impl From<&ConstraintMatrices<Fq>> for SerializableShape {
+    fn from(v: &ConstraintMatrices<Fq>) -> Self {
         let convert_matrix = |m: &[Vec<(Fq, usize)>]| -> Vec<Vec<Fq>> {
             m.iter()
                 .map(|row| row.iter().map(|(coeff, _var)| *coeff).collect::<Vec<Fq>>())
@@ -125,8 +125,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         &self.output
     }
 
-    fn params(&self) -> Fq {
-        Fq::from(self.shape.a.len() as u64) + Fq::from(self.shape.num_witness_variables as u64)
+    fn params(&self, constants: &PoseidonConfig<Fq>) -> Fq {
+        SerializableShape::from(&self.shape).digest(constants)
     }
 
     fn has_crossterms(&self) -> bool {

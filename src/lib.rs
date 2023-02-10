@@ -74,7 +74,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     fn params(&self) -> Fq {
         self.folded
             .iter()
-            .map(|p| p.params())
+            .map(|p| p.params(&self.constants))
             .fold(Fq::zero(), |acc, x| acc + x)
     }
 }
@@ -155,7 +155,7 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
     sponge.absorb(
         &[folded
             .iter()
-            .fold(Fq::zero(), |acc, pair| acc + pair.params())]
+            .fold(Fq::zero(), |acc, pair| acc + pair.params(constants))]
         .into_iter()
         .chain([Fq::from(i as u64)])
         .chain([Fq::from(pc as u64)])
