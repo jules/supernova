@@ -1,8 +1,8 @@
 //! Commitment logic used for the creation of committed circuit structures.
 
-use ark_bls12_381::{Fq, G1Affine};
+use ark_bls12_381::{Fq, G1Affine, G1Projective};
 use ark_ec::AffineRepr;
-use ark_ff::{PrimeField, UniformRand};
+use ark_ff::{PrimeField, UniformRand, Zero};
 use rand_core::OsRng;
 use rayon::prelude::*;
 
@@ -20,6 +20,7 @@ pub fn commit(generators: &[G1Affine], scalars: &[Fq]) -> G1Affine {
     scalars
         .par_iter()
         .zip(generators)
-        .map(|(scalar, gen)| gen.mul_bigint(scalar.into_bigint()).into())
-        .reduce(G1Affine::zero, |a, b| (a + b).into())
+        .map(|(scalar, gen)| gen.mul_bigint(scalar.into_bigint()))
+        .reduce(G1Projective::zero, |a, b| a + b)
+        .into()
 }
