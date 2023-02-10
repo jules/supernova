@@ -10,7 +10,7 @@ pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
-use ark_bls12_381::{Fq, G1Projective};
+use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::{
     poseidon::{find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
@@ -22,7 +22,7 @@ use ark_ff::{PrimeField, Zero};
 /// that the proof is currently at.
 pub struct Proof<A: Arithmetization, const L: usize> {
     constants: PoseidonConfig<Fq>,
-    generators: Vec<G1Projective>,
+    generators: Vec<G1Affine>,
     folded: [A; L],
     latest: A,
     pc: usize,
@@ -32,7 +32,7 @@ pub struct Proof<A: Arithmetization, const L: usize> {
 impl<A: Arithmetization, const L: usize> Proof<A, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
-    pub fn new(folded: [A; L], latest: A, generators: Vec<G1Projective>) -> Self {
+    pub fn new(folded: [A; L], latest: A, generators: Vec<G1Affine>) -> Self {
         // TODO: these parameters might not be optimal/secure for Fq.
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
@@ -60,7 +60,12 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             &self.generators,
         );
         // Fold natively.
-        self.folded[self.pc].fold(&self.latest, &self.constants, &self.generators);
+        self.folded[self.pc].fold(
+            &self.latest,
+            &self.constants,
+            &self.generators,
+            self.params(),
+        );
         self.latest = new_latest;
         self.pc = pc;
         self.i += 1;

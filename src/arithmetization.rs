@@ -4,7 +4,7 @@
 
 pub mod r1cs;
 
-use ark_bls12_381::{Fq, G1Projective};
+use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 
 /// A foldable circuit representation.
@@ -15,10 +15,10 @@ pub trait Arithmetization: Sized {
     fn hash(&self) -> Fq;
 
     // Returns the current witness commitment.
-    fn witness_commitment(&self) -> G1Projective;
+    fn witness_commitment(&self) -> G1Affine;
 
     // Checks if the arithmetization is correct.
-    fn is_satisfied(&self, generators: &[G1Projective]) -> bool;
+    fn is_satisfied(&self, generators: &[G1Affine]) -> bool;
 
     // Returns the circuit metadata used for hashing.
     fn params(&self) -> Fq;
@@ -37,14 +37,20 @@ pub trait Arithmetization: Sized {
     fn synthesize(
         &mut self,
         params: Fq,
-        latest_witness: G1Projective,
+        latest_witness: G1Affine,
         latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,
         constants: &PoseidonConfig<Fq>,
-        generators: &[G1Projective],
+        generators: &[G1Affine],
     ) -> Self;
 
-    fn fold(&mut self, other: &Self, constants: &PoseidonConfig<Fq>, generators: &[G1Projective]);
+    fn fold(
+        &mut self,
+        other: &Self,
+        constants: &PoseidonConfig<Fq>,
+        generators: &[G1Affine],
+        params: Fq,
+    );
 }

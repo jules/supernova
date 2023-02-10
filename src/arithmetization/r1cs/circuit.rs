@@ -3,13 +3,13 @@
 
 use super::StepCircuit;
 use crate::{commit, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, G1Projective};
+use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ec::Group;
+use ark_ec::AffineRepr;
 use ark_ff::{One, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
@@ -64,50 +64,12 @@ impl SerializableShape {
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn r1cs_matrix_vec_product(
-    a: &[Vec<(Fq, usize)>],
-    b: &[Vec<(Fq, usize)>],
-    c: &[Vec<(Fq, usize)>],
-    z: &[Fq],
-) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
-    if z.len() != a.len() {
-        // TODO: shouldnt panic here
-        panic!("mismatched inputs to shape");
-    }
-
-    let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
-        m.par_iter()
-            .map(|row| {
-                row.par_iter()
-                    .zip(z)
-                    .fold(Fq::zero, |acc, ((coeff, val), v)| {
-                        acc + coeff * &Fq::from(*val as u64) * v
-                    })
-                    .reduce(Fq::zero, |acc, val| acc + val)
-            })
-            .collect::<Vec<Fq>>()
-    };
-
-    let (Az, (Bz, Cz)) = rayon::join(
-        || sparse_matrix_vec_product(a, z),
-        || {
-            rayon::join(
-                || sparse_matrix_vec_product(b, z),
-                || sparse_matrix_vec_product(c, z),
-            )
-        },
-    );
-
-    (Az, Bz, Cz)
-}
-
 #[derive(Clone)]
 pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) shape: ConstraintMatrices<Fq>,
-    pub(crate) comm_witness: G1Projective,
-    pub(crate) comm_E: G1Projective,
-    pub(crate) comm_T: G1Projective,
+    pub(crate) comm_witness: G1Affine,
+    pub(crate) comm_E: G1Affine,
+    pub(crate) comm_T: G1Affine,
     pub(crate) E: Vec<Fq>,
     pub(crate) witness: Vec<Fq>,
     pub(crate) instance: Vec<Fq>,
@@ -117,80 +79,6 @@ pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) circuit: C,
 }
 
-impl<C: StepCircuit<Fq>> R1CS<C> {
-    fn commit_t(&self, other: &Self, generators: &[G1Projective]) -> (Vec<Fq>, G1Projective) {
-        let (az1, bz1, cz1) = r1cs_matrix_vec_product(
-            &self.shape.a,
-            &self.shape.b,
-            &self.shape.c,
-            &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
-        );
-        let (az2, bz2, cz2) = r1cs_matrix_vec_product(
-            &self.shape.a,
-            &self.shape.b,
-            &self.shape.c,
-            &[
-                other.witness.as_slice(),
-                &[other.u],
-                other.instance.as_slice(),
-            ]
-            .concat(),
-        );
-
-        let t = az1
-            .into_iter()
-            .zip(bz2)
-            .zip(az2)
-            .zip(bz1)
-            .zip(cz1)
-            .zip(cz2)
-            .map(|(((((az1, bz2), az2), bz1), cz1), cz2)| {
-                az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
-            })
-            .collect::<Vec<Fq>>();
-        let comm_T = commit(generators, &t);
-        (t.to_vec(), comm_T)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn alloc_witnesses(
-        &self,
-        params: Fq,
-        cs: &mut ConstraintSystemRef<Fq>,
-        i: usize,
-    ) -> (
-        FpVar<Fq>,
-        FpVar<Fq>,
-        Vec<FpVar<Fq>>,
-        Vec<FpVar<Fq>>,
-        G1Var<Bls12Config>,
-        G1Var<Bls12Config>,
-        FpVar<Fq>,
-        FpVar<Fq>,
-        G1Var<Bls12Config>,
-    ) {
-        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
-        let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
-        let z0 = self
-            .z0()
-            .iter()
-            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
-            .collect::<Vec<_>>();
-        let output = self
-            .output()
-            .iter()
-            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
-            .collect::<Vec<_>>();
-        let comm_W =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
-        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
-        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
-        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
-        let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
-        (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
-    }
-}
-
 impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     type ConstraintSystem = ConstraintSystemRef<Fq>;
 
@@ -198,11 +86,11 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.hash
     }
 
-    fn witness_commitment(&self) -> G1Projective {
+    fn witness_commitment(&self) -> G1Affine {
         self.comm_witness
     }
 
-    fn is_satisfied(&self, generators: &[G1Projective]) -> bool {
+    fn is_satisfied(&self, generators: &[G1Affine]) -> bool {
         let num_constraints = self.shape.a.len();
         if self.witness.len() != self.shape.num_witness_variables
             || self.E.len() != num_constraints
@@ -252,13 +140,13 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     fn synthesize(
         &mut self,
         params: Fq,
-        latest_witness: G1Projective,
+        latest_witness: G1Affine,
         latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,
         constants: &PoseidonConfig<Fq>,
-        generators: &[G1Projective],
+        generators: &[G1Affine],
     ) -> R1CS<C> {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
@@ -278,9 +166,9 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Synthesize both cases
         // Base case
         let W_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Affine::default())).unwrap();
         let E_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::default())).unwrap();
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Affine::default())).unwrap();
         let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
         let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
 
@@ -369,14 +257,24 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         create_circuit(cs, generators, hash.value().unwrap(), self.circuit.clone())
     }
 
-    fn fold(&mut self, other: &Self, constants: &PoseidonConfig<Fq>, generators: &[G1Projective]) {
+    fn fold(
+        &mut self,
+        other: &Self,
+        constants: &PoseidonConfig<Fq>,
+        generators: &[G1Affine],
+        params: Fq,
+    ) {
         let (t, comm_T) = self.commit_t(other, generators);
         let mut sponge = PoseidonSponge::<Fq>::new(constants);
         sponge.absorb(
-            &[SerializableShape::from(self.shape.clone()).digest(constants)]
+            &[params]
                 .into_iter()
-                .chain(self.instance.clone())
-                .chain(other.instance.clone())
+                .chain([self.comm_witness])
+                .chain([self.comm_E])
+                .chain([self.u])
+                .chain([self.hash])
+                .chain([other.comm_witness])
+                .chain([other.hash])
                 .chain(t.clone())
                 .collect::<Vec<Fq>>(),
         );
@@ -389,17 +287,92 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .par_iter_mut()
             .zip(&other.instance)
             .for_each(|(x1, x2)| *x1 += *x2 * r);
-        self.comm_witness += other.comm_witness.mul_bigint(r.into_bigint());
+        self.comm_witness =
+            (self.comm_witness + other.comm_witness.mul_bigint(r.into_bigint())).into();
         self.E.par_iter_mut().zip(t).for_each(|(a, b)| *a += r * b);
-        self.comm_E += comm_T.mul_bigint(r.into_bigint());
+        self.comm_E = (self.comm_E + comm_T.mul_bigint(r.into_bigint())).into();
         self.u += r;
         self.comm_T = comm_T;
     }
 }
 
+impl<C: StepCircuit<Fq>> R1CS<C> {
+    fn commit_t(&self, other: &Self, generators: &[G1Affine]) -> (Vec<Fq>, G1Affine) {
+        let (az1, bz1, cz1) = r1cs_matrix_vec_product(
+            &self.shape.a,
+            &self.shape.b,
+            &self.shape.c,
+            &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
+        );
+        let (az2, bz2, cz2) = r1cs_matrix_vec_product(
+            &self.shape.a,
+            &self.shape.b,
+            &self.shape.c,
+            &[
+                other.witness.as_slice(),
+                &[other.u],
+                other.instance.as_slice(),
+            ]
+            .concat(),
+        );
+
+        let t = az1
+            .into_iter()
+            .zip(bz2)
+            .zip(az2)
+            .zip(bz1)
+            .zip(cz1)
+            .zip(cz2)
+            .map(|(((((az1, bz2), az2), bz1), cz1), cz2)| {
+                az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
+            })
+            .collect::<Vec<Fq>>();
+        let comm_T = commit(generators, &t);
+        (t.to_vec(), comm_T)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn alloc_witnesses(
+        &self,
+        params: Fq,
+        cs: &mut ConstraintSystemRef<Fq>,
+        i: usize,
+    ) -> (
+        FpVar<Fq>,
+        FpVar<Fq>,
+        Vec<FpVar<Fq>>,
+        Vec<FpVar<Fq>>,
+        G1Var<Bls12Config>,
+        G1Var<Bls12Config>,
+        FpVar<Fq>,
+        FpVar<Fq>,
+        G1Var<Bls12Config>,
+    ) {
+        let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
+        let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
+        let z0 = self
+            .z0()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
+        let output = self
+            .output()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
+        let comm_W =
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
+        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
+        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
+        let comm_T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
+        (params, i, z0, output, comm_W, comm_E, u, hash, comm_T)
+    }
+}
+
 fn create_circuit<C: StepCircuit<Fq>>(
     cs: ConstraintSystemRef<Fq>,
-    generators: &[G1Projective],
+    generators: &[G1Affine],
     hash: Fq,
     circuit: C,
 ) -> R1CS<C> {
@@ -408,8 +381,8 @@ fn create_circuit<C: StepCircuit<Fq>>(
     R1CS {
         shape: matrices.clone(),
         comm_witness: commit(generators, &cs.witness_assignment),
-        comm_E: G1Projective::zero(),
-        comm_T: G1Projective::zero(),
+        comm_E: G1Affine::zero(),
+        comm_T: G1Affine::zero(),
         E: vec![Fq::zero(); matrices.num_constraints],
         witness: cs.witness_assignment.clone(),
         instance: cs.instance_assignment.clone(),
@@ -418,6 +391,44 @@ fn create_circuit<C: StepCircuit<Fq>>(
         output: vec![],
         circuit,
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn r1cs_matrix_vec_product(
+    a: &[Vec<(Fq, usize)>],
+    b: &[Vec<(Fq, usize)>],
+    c: &[Vec<(Fq, usize)>],
+    z: &[Fq],
+) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
+    if z.len() != a.len() {
+        // TODO: shouldnt panic here
+        panic!("mismatched inputs to shape");
+    }
+
+    let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
+        m.par_iter()
+            .map(|row| {
+                row.par_iter()
+                    .zip(z)
+                    .fold(Fq::zero, |acc, ((coeff, val), v)| {
+                        acc + coeff * &Fq::from(*val as u64) * v
+                    })
+                    .reduce(Fq::zero, |acc, val| acc + val)
+            })
+            .collect::<Vec<Fq>>()
+    };
+
+    let (Az, (Bz, Cz)) = rayon::join(
+        || sparse_matrix_vec_product(a, z),
+        || {
+            rayon::join(
+                || sparse_matrix_vec_product(b, z),
+                || sparse_matrix_vec_product(c, z),
+            )
+        },
+    );
+
+    (Az, Bz, Cz)
 }
 
 #[allow(clippy::too_many_arguments)]
