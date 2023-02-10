@@ -269,11 +269,19 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         sponge.absorb(
             &[params]
                 .into_iter()
-                .chain([self.comm_witness])
-                .chain([self.comm_E])
+                .chain([
+                    self.comm_witness.x,
+                    self.comm_witness.y,
+                    Fq::from(self.comm_witness.infinity),
+                ])
+                .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
                 .chain([self.u])
                 .chain([self.hash])
-                .chain([other.comm_witness])
+                .chain([
+                    other.comm_witness.x,
+                    other.comm_witness.y,
+                    Fq::from(other.comm_witness.infinity),
+                ])
                 .chain([other.hash])
                 .chain(t.clone())
                 .collect::<Vec<Fq>>(),

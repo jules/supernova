@@ -21,5 +21,5 @@ pub fn commit(generators: &[G1Affine], scalars: &[Fq]) -> G1Affine {
         .par_iter()
         .zip(generators)
         .map(|(scalar, gen)| gen.mul_bigint(scalar.into_bigint()).into())
-        .reduce(|| G1Affine::zero(), |a, b| (a + b).into())
+        .reduce(G1Affine::zero, |a, b| (a + b).into())
 }
