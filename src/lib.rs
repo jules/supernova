@@ -169,6 +169,13 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         .chain([Fq::from(pc as u64)])
         .chain(z0)
         .chain(output.to_vec())
+        .chain([
+            folded[pc].witness_commitment().x,
+            folded[pc].witness_commitment().y,
+            Fq::from(folded[pc].witness_commitment().infinity),
+        ])
+        .chain([comm_E])
+        .chain([u])
         .chain([folded[pc].hash()])
         .collect::<Vec<Fq>>(),
     );

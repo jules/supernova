@@ -319,6 +319,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.comm_E = (self.comm_E + comm_T.mul_bigint(r.into_bigint())).into();
         self.u += r;
         self.comm_T = comm_T;
+        self.hash += other.hash * r;
     }
 }
 
