@@ -36,6 +36,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         // TODO: these parameters might not be optimal/secure for Fq.
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+        let i = folded.len();
         Self {
             constants: PoseidonConfig {
                 full_rounds: 8,
@@ -50,7 +51,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             folded,
             latest,
             pc: 0,
-            i: 0,
+            i,
         }
     }
 
@@ -107,14 +108,7 @@ pub fn verify<A: Arithmetization, const L: usize>(
 
     // Check that the public IO of the latest instance includes
     // the correct hash.
-    let hash = hash_public_io(
-        &proof.constants,
-        &proof.folded,
-        proof.i,
-        proof.pc,
-        proof.latest.z0(),
-        proof.latest.output(),
-    );
+    let hash = hash_public_io(&proof.constants, &proof.folded, proof.i, proof.pc);
     if proof.latest.hash() != hash {
         return Err(VerificationError::HashMismatch(hash, proof.latest.hash()));
     }
@@ -155,30 +149,38 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
     folded: &[A; L],
     i: usize,
     pc: usize,
-    z0: Vec<Fq>,
-    output: &[Fq],
 ) -> Fq {
     // TODO: validate parameters
     let mut sponge = PoseidonSponge::<Fq>::new(constants);
-    sponge.absorb(
-        &[folded
-            .iter()
-            .fold(Fq::zero(), |acc, pair| acc + pair.params(constants))]
-        .into_iter()
-        .chain([Fq::from(i as u64)])
-        .chain([Fq::from(pc as u64)])
-        .chain(z0)
-        .chain(output.to_vec())
-        .chain([
-            folded[pc].witness_commitment().x,
-            folded[pc].witness_commitment().y,
-            Fq::from(folded[pc].witness_commitment().infinity),
-        ])
-        .chain([comm_E])
-        .chain([u])
-        .chain([folded[pc].hash()])
-        .collect::<Vec<Fq>>(),
-    );
+    let terms = [folded
+        .iter()
+        .fold(Fq::zero(), |acc, pair| acc + pair.params(constants))]
+    .into_iter()
+    .chain([Fq::from(i as u64)])
+    .chain([Fq::from(pc as u64)])
+    .chain(folded[pc].z0())
+    .chain(folded[pc].output().to_vec())
+    .chain([
+        folded[pc].witness_commitment().x,
+        folded[pc].witness_commitment().y,
+        Fq::from(folded[pc].witness_commitment().infinity),
+    ])
+    .chain(folded[pc].crossterms())
+    .chain([folded[pc].hash()])
+    .collect::<Vec<Fq>>();
+    let naming = vec![
+        "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
+        "comm_e", "u", "hash",
+    ];
+    // println!(
+    //     "HASHING NATIVE WITH {:?}",
+    //     terms
+    //         .iter()
+    //         .zip(naming)
+    //         .map(|(v, name)| format!("{} {:?}", name, v))
+    //         .collect::<Vec<String>>()
+    // );
+    sponge.absorb(&terms);
     sponge.squeeze_native_field_elements(1)[0]
 }
 

@@ -3,7 +3,7 @@
 
 use super::StepCircuit;
 use crate::{commit, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine};
+use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine, G1Projective};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
@@ -16,7 +16,10 @@ use ark_r1cs_std::{
     boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
-    groups::{curves::short_weierstrass::bls12::G1Var, CurveVar},
+    groups::{
+        curves::short_weierstrass::bls12::{G1AffineVar, G1Var},
+        CurveVar,
+    },
     select::CondSelectGadget,
     R1CSVar, ToBitsGadget, ToConstraintFieldGadget,
 };
@@ -90,6 +93,15 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         self.comm_witness
     }
 
+    fn crossterms(&self) -> Vec<Fq> {
+        vec![
+            self.comm_E.x,
+            self.comm_E.y,
+            Fq::from(self.comm_E.infinity),
+            self.u,
+        ]
+    }
+
     fn is_satisfied(&self, generators: &[G1Affine]) -> bool {
         let num_constraints = self.shape.a.len();
         if self.witness.len() != self.shape.num_witness_variables
@@ -134,7 +146,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 
     fn z0(&self) -> Vec<Fq> {
-        vec![Fq::zero(); self.shape.num_instance_variables]
+        vec![Fq::zero(); self.output().len()]
     }
 
     fn synthesize(
@@ -182,16 +194,26 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Synthesize both cases
         // Base case
         let W_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Affine::default())).unwrap();
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::zero())).unwrap();
         let E_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Affine::default())).unwrap();
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::zero())).unwrap();
         let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
         let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
 
         // Non base case
         let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         let hash = compute_io_hash(
-            constants, &mut cs, &params, &i, &old_pc, &z0, &output, &comm_W, &comm_E, &u, &hash,
+            constants,
+            &mut cs,
+            &params,
+            &i,
+            &old_pc,
+            &z0,
+            &output,
+            &comm_W.to_affine().unwrap(),
+            &comm_E.to_affine().unwrap(),
+            &u,
+            &hash,
         );
 
         // Fold in circuit
@@ -200,13 +222,13 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             constants,
             &mut cs,
             &params,
-            &comm_W,
-            &comm_E,
+            &comm_W.to_affine().unwrap(),
+            &comm_E.to_affine().unwrap(),
             &u,
             &hash,
-            &latest_witness,
+            &latest_witness.to_affine().unwrap(),
             &latest_hash,
-            &T,
+            &T.to_affine().unwrap(),
         );
 
         let rW = latest_witness
@@ -254,7 +276,16 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Compute hash and set as output.
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
-                constants, &mut cs, &params, &i_new, &new_pc, &z0, &output, &W_new, &E_new, &u_new,
+                constants,
+                &mut cs,
+                &params,
+                &i_new,
+                &new_pc,
+                &z0,
+                &output,
+                &W_new.to_affine().unwrap(),
+                &E_new.to_affine().unwrap(),
+                &u_new,
                 &hash_new,
             )
             .value()
@@ -284,26 +315,51 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     ) {
         let (t, comm_T) = self.commit_t(other, generators);
         let mut sponge = PoseidonSponge::<Fq>::new(constants);
-        sponge.absorb(
-            &[params]
-                .into_iter()
-                .chain([
-                    self.comm_witness.x,
-                    self.comm_witness.y,
-                    Fq::from(self.comm_witness.infinity),
-                ])
-                .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
-                .chain([self.u])
-                .chain([self.hash])
-                .chain([
-                    other.comm_witness.x,
-                    other.comm_witness.y,
-                    Fq::from(other.comm_witness.infinity),
-                ])
-                .chain([other.hash])
-                .chain(t.clone())
-                .collect::<Vec<Fq>>(),
+        let terms = [params]
+            .into_iter()
+            .chain([
+                self.comm_witness.x,
+                self.comm_witness.y,
+                Fq::from(self.comm_witness.infinity),
+            ])
+            .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
+            .chain([self.u])
+            .chain([self.hash])
+            .chain([
+                other.comm_witness.x,
+                other.comm_witness.y,
+                Fq::from(other.comm_witness.infinity),
+            ])
+            .chain([other.hash])
+            .chain([comm_T.x, comm_T.y, Fq::from(comm_T.infinity)])
+            .collect::<Vec<Fq>>();
+        let naming = vec![
+            "params",
+            "comm_w",
+            "comm_w",
+            "comm_w",
+            "comm_e",
+            "comm_e",
+            "comm_e",
+            "u",
+            "hash",
+            "latest_witness",
+            "latest_witness",
+            "latest_witness",
+            "latest_hash",
+            "comm_t",
+            "comm_t",
+            "comm_t",
+        ];
+        println!(
+            "COMPUTING R NATIVELY AS {:?}",
+            terms
+                .iter()
+                .zip(naming)
+                .map(|(v, name)| format!("{} {:?}", name, v))
+                .collect::<Vec<String>>()
         );
+        sponge.absorb(&terms);
         let r = sponge.squeeze_native_field_elements(1)[0];
         self.witness
             .par_iter_mut()
@@ -337,7 +393,6 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             a_num_non_zero: 0,
             b_num_non_zero: 0,
             c_num_non_zero: 0,
-
             a: vec![],
             b: vec![],
             c: vec![],
@@ -345,9 +400,21 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
 
         let mut r1cs = Self {
             shape: empty_shape,
-            comm_witness: G1Affine::zero(),
-            comm_E: G1Affine::zero(),
-            comm_T: G1Affine::zero(),
+            comm_witness: G1Affine {
+                x: Fq::zero(),
+                y: Fq::one(),
+                infinity: true,
+            },
+            comm_E: G1Affine {
+                x: Fq::zero(),
+                y: Fq::one(),
+                infinity: true,
+            },
+            comm_T: G1Affine {
+                x: Fq::zero(),
+                y: Fq::one(),
+                infinity: true,
+            },
             E: vec![],
             witness: vec![],
             instance: vec![],
@@ -360,7 +427,11 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         // TODO: check if we need to set pc
         let circuit = r1cs.synthesize(
             Fq::zero(),
-            G1Affine::zero(),
+            G1Affine {
+                x: Fq::zero(),
+                y: Fq::one(),
+                infinity: true,
+            },
             Fq::zero(),
             0,
             0,
@@ -423,8 +494,16 @@ fn create_circuit<C: StepCircuit<Fq>>(
     R1CS {
         shape: matrices.clone(),
         comm_witness: commit(generators, &cs.witness_assignment),
-        comm_E: G1Affine::zero(),
-        comm_T: G1Affine::zero(),
+        comm_E: G1Affine {
+            x: Fq::zero(),
+            y: Fq::one(),
+            infinity: true,
+        },
+        comm_T: G1Affine {
+            x: Fq::zero(),
+            y: Fq::one(),
+            infinity: true,
+        },
         E: vec![Fq::zero(); matrices.num_constraints],
         witness: cs.witness_assignment.clone(),
         instance: cs.instance_assignment[1..].to_vec(),
@@ -474,12 +553,37 @@ fn compute_io_hash(
     pc: &FpVar<Fq>,
     z0: &[FpVar<Fq>],
     output: &[FpVar<Fq>],
-    comm_W: &G1Var<Bls12Config>,
-    comm_E: &G1Var<Bls12Config>,
+    comm_W: &G1AffineVar<Bls12Config>,
+    comm_E: &G1AffineVar<Bls12Config>,
     u: &FpVar<Fq>,
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
+    // println!(
+    //     "HASHING CIRCUIT WITH params {:?} i {:?} pc {:?} z0 {:?} output {:?} comm_w {:?} comm_e {:?} u {:?} hash {:?}",
+    //     params.value().unwrap(),
+    //     i.value().unwrap(),
+    //     pc.value().unwrap(),
+    //     z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
+    //     output
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_W
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_E
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     u.value().unwrap(),
+    //     hash.value().unwrap()
+    // );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();
@@ -501,15 +605,45 @@ fn compute_r(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
     params: &FpVar<Fq>,
-    comm_W: &G1Var<Bls12Config>,
-    comm_E: &G1Var<Bls12Config>,
+    comm_W: &G1AffineVar<Bls12Config>,
+    comm_E: &G1AffineVar<Bls12Config>,
     u: &FpVar<Fq>,
     hash: &FpVar<Fq>,
-    latest_witness: &G1Var<Bls12Config>,
+    latest_witness: &G1AffineVar<Bls12Config>,
     latest_hash: &FpVar<Fq>,
-    T: &G1Var<Bls12Config>,
+    T: &G1AffineVar<Bls12Config>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
+    println!(
+        "COMPUTING R IN CIRCUIT AS params {:?} comm_w {:?} comm_e {:?} u {:?} hash {:?} latest_witness {:?} latest_hash {:?} comm_t {:?}",
+        params.value().unwrap(),
+        comm_W
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_E
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        u.value().unwrap(),
+        hash.value().unwrap(),
+        latest_witness
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        latest_hash.value().unwrap(),
+        T.to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+    );
     sponge.absorb(params).unwrap();
     sponge
         .absorb(&comm_W.to_constraint_field().unwrap())

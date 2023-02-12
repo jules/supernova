@@ -17,6 +17,9 @@ pub trait Arithmetization: Sized {
     // Returns the current witness commitment.
     fn witness_commitment(&self) -> G1Affine;
 
+    // Returns the crossterms for hashing.
+    fn crossterms(&self) -> Vec<Fq>;
+
     // Checks if the arithmetization is correct.
     fn is_satisfied(&self, generators: &[G1Affine]) -> bool;
 
