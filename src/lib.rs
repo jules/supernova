@@ -10,12 +10,12 @@ pub use commitment::*;
 mod errors;
 use errors::VerificationError;
 
-use ark_bls12_381::{Fq, G1Affine};
+use ark_bls12_381::{Fq, Fr, G1Affine};
 use ark_crypto_primitives::sponge::{
     poseidon::{find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ff::{PrimeField, Zero};
+use ark_ff::{BigInt, BigInteger, PrimeField, Zero};
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration
@@ -91,7 +91,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
 /// Verify a SuperNova proof.
 pub fn verify<A: Arithmetization, const L: usize>(
     proof: &Proof<A, L>,
-) -> Result<(), VerificationError<Fq>> {
+) -> Result<(), VerificationError<Fr>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 0 {
@@ -149,7 +149,7 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
     folded: &[A; L],
     i: usize,
     pc: usize,
-) -> Fq {
+) -> Fr {
     // TODO: validate parameters
     let mut sponge = PoseidonSponge::<Fq>::new(constants);
     let terms = [folded
@@ -166,7 +166,7 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         Fq::from(folded[pc].witness_commitment().infinity),
     ])
     .chain(folded[pc].crossterms())
-    .chain([folded[pc].hash()])
+    .chain([scalar_to_base(folded[pc].hash())])
     .collect::<Vec<Fq>>();
     let naming = vec![
         "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
@@ -178,7 +178,19 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         .zip(naming)
         .for_each(|(v, name)| println!("{} {:?}", name, v));
     sponge.absorb(&terms);
-    sponge.squeeze_native_field_elements(1)[0]
+    Fr::from_bigint(BigInt::<4>::from_bits_le(&sponge.squeeze_bits(254))).unwrap()
+}
+
+// Casts a scalar field element to a base field element.
+fn scalar_to_base(scalar: Fr) -> Fq {
+    let bigint = scalar.into_bigint();
+    let mut base_limbs = [0u64; 6];
+    base_limbs[0] = bigint.0[0];
+    base_limbs[1] = bigint.0[1];
+    base_limbs[2] = bigint.0[2];
+    base_limbs[3] = bigint.0[3];
+    let base_bigint = BigInt::<6>(base_limbs);
+    Fq::from_bigint(base_bigint).unwrap()
 }
 
 #[cfg(test)]
