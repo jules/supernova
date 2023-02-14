@@ -172,14 +172,11 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
         "comm_e", "u", "hash",
     ];
-    // println!(
-    //     "HASHING NATIVE WITH {:?}",
-    //     terms
-    //         .iter()
-    //         .zip(naming)
-    //         .map(|(v, name)| format!("{} {:?}", name, v))
-    //         .collect::<Vec<String>>()
-    // );
+    println!("HASHING NATIVE WITH");
+    terms
+        .iter()
+        .zip(naming)
+        .for_each(|(v, name)| println!("{} {:?}", name, v));
     sponge.absorb(&terms);
     sponge.squeeze_native_field_elements(1)[0]
 }
