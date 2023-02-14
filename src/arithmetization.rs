@@ -4,7 +4,7 @@
 
 pub mod r1cs;
 
-use ark_bls12_381::{Fq, Fr, G1Affine};
+use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 
 /// A foldable circuit representation.
@@ -12,7 +12,7 @@ pub trait Arithmetization: Sized {
     type ConstraintSystem;
 
     // Returns the latest IO hash.
-    fn hash(&self) -> Fr;
+    fn hash(&self) -> Fq;
 
     // Returns the current witness commitment.
     fn witness_commitment(&self) -> G1Affine;
@@ -41,7 +41,7 @@ pub trait Arithmetization: Sized {
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
-        latest_hash: Fr,
+        latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,

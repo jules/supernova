@@ -2,8 +2,8 @@
 //! used for the SuperNova protocol when instantiated on R1CS circuits.
 
 use super::StepCircuit;
-use crate::{commit, scalar_to_base, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, Fr, G1Affine, G1Projective};
+use crate::{commit, Arithmetization};
+use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine, G1Projective};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
@@ -78,7 +78,7 @@ pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) witness: Vec<Fq>,
     pub(crate) instance: Vec<Fq>,
     pub(crate) u: Fq,
-    pub(crate) hash: Fr,
+    pub(crate) hash: Fq,
     pub(crate) output: Vec<Fq>,
     pub(crate) circuit: C,
 }
@@ -86,7 +86,7 @@ pub struct R1CS<C: StepCircuit<Fq>> {
 impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     type ConstraintSystem = ConstraintSystemRef<Fq>;
 
-    fn hash(&self) -> Fr {
+    fn hash(&self) -> Fq {
         self.hash
     }
 
@@ -154,7 +154,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
-        latest_hash: Fr,
+        latest_hash: Fq,
         old_pc: usize,
         new_pc: usize,
         i: usize,
@@ -183,12 +183,11 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
         let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
         let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
-        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(self.hash))).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
         let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
-        let latest_hash =
-            FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(latest_hash))).unwrap();
+        let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
 
         let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
         let one = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
@@ -310,7 +309,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         generators: &[G1Affine],
         params: Fq,
     ) {
-        let (t, comm_T) = self.commit_t(other, generators);
         let mut sponge = PoseidonSponge::<Fq>::new(constants);
         let terms = [params]
             .into_iter()
@@ -321,14 +319,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             ])
             .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
             .chain([self.u])
-            .chain([scalar_to_base(self.hash)])
+            .chain([self.hash])
             .chain([
                 other.comm_witness.x,
                 other.comm_witness.y,
                 Fq::from(other.comm_witness.infinity),
             ])
-            .chain([scalar_to_base(other.hash)])
-            .chain([comm_T.x, comm_T.y, Fq::from(comm_T.infinity)])
+            .chain([other.hash])
+            .chain([self.comm_T.x, self.comm_T.y, Fq::from(self.comm_T.infinity)])
             .collect::<Vec<Fq>>();
         let naming = vec![
             "params",
@@ -354,37 +352,22 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         //     .zip(naming)
         //     .for_each(|(v, name)| println!("{} {:?}", name, v));
         sponge.absorb(&terms);
-        let r = Fr::from_bigint(BigInt::<4>::from_bits_le(&sponge.squeeze_bits(254))).unwrap();
-        let r_base = scalar_to_base(r);
+        let r = sponge.squeeze_native_field_elements(1)[0];
         self.witness
             .par_iter_mut()
             .zip(&other.witness)
-            .for_each(|(w1, w2)| *w1 += *w2 * r_base);
+            .for_each(|(w1, w2)| *w1 += *w2 * r);
         self.instance
             .par_iter_mut()
             .zip(&other.instance)
-            .for_each(|(x1, x2)| *x1 += *x2 * r_base);
+            .for_each(|(x1, x2)| *x1 += *x2 * r);
         self.comm_witness =
             (self.comm_witness + other.comm_witness.mul_bigint(r.into_bigint())).into();
-        if self.comm_witness.x == Fq::zero()
-            && self.comm_witness.y == Fq::zero()
-            && self.comm_witness.infinity
-        {
-            self.comm_witness.y = Fq::one();
-        }
-        self.E
-            .par_iter_mut()
-            .zip(t)
-            .for_each(|(a, b)| *a += r_base * b);
-        self.comm_E = (self.comm_E + comm_T.mul_bigint(r.into_bigint())).into();
-        if self.comm_E.x == Fq::zero() && self.comm_E.y == Fq::zero() && self.comm_E.infinity {
-            self.comm_E.y = Fq::one();
-        }
-        self.u += r_base;
+        let (t, comm_T) = self.commit_t(other, generators);
+        self.E.par_iter_mut().zip(t).for_each(|(a, b)| *a += r * b);
+        self.comm_E = (self.comm_E + self.comm_T.mul_bigint(r.into_bigint())).into();
+        self.u += r;
         self.comm_T = comm_T;
-        if self.comm_T.x == Fq::zero() && self.comm_T.y == Fq::zero() && self.comm_T.infinity {
-            self.comm_T.y = Fq::one();
-        }
         self.hash += other.hash * r;
     }
 }
@@ -417,7 +400,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             witness: vec![],
             instance: vec![],
             u: Fq::one(),
-            hash: Fr::zero(),
+            hash: Fq::zero(),
             output: z0.clone(),
             circuit,
         };
@@ -426,7 +409,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         let circuit = r1cs.synthesize(
             Fq::zero(),
             G1Affine::rand(&mut OsRng {}),
-            Fr::zero(),
+            Fq::zero(),
             0,
             0,
             0,
@@ -434,7 +417,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             generators,
         );
         // Reset mutated variables
-        r1cs.hash = Fr::zero();
+        r1cs.hash = Fq::zero();
         r1cs.witness = vec![Fq::zero(); circuit.witness.len()];
         r1cs.instance = vec![Fq::zero(); circuit.instance.len()];
         r1cs.E = vec![Fq::zero(); circuit.shape.num_constraints];
@@ -472,11 +455,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
                 az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
             })
             .collect::<Vec<Fq>>();
-        let mut comm_T = commit(generators, &t);
-        // Ensure identical commitments in circuit and natively.
-        if comm_T.x == Fq::zero() && comm_T.y == Fq::zero() && comm_T.infinity {
-            comm_T.y = Fq::one();
-        }
+        let comm_T = commit(generators, &t);
         (t.to_vec(), comm_T)
     }
 }
@@ -498,7 +477,7 @@ fn create_circuit<C: StepCircuit<Fq>>(
         witness: cs.witness_assignment.clone(),
         instance: cs.instance_assignment[1..].to_vec(),
         u: Fq::one(),
-        hash: base_to_scalar(hash),
+        hash: hash,
         output: vec![],
         circuit,
     }
@@ -549,31 +528,31 @@ fn compute_io_hash(
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    // println!(
-    //     "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
-    //     params.value().unwrap(),
-    //     i.value().unwrap(),
-    //     pc.value().unwrap(),
-    //     z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
-    //     output
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     comm_W
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     comm_E
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     u.value().unwrap(),
-    //     hash.value().unwrap()
-    // );
+    println!(
+        "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
+        params.value().unwrap(),
+        i.value().unwrap(),
+        pc.value().unwrap(),
+        z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
+        output
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_W
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_E
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        u.value().unwrap(),
+        hash.value().unwrap()
+    );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();
@@ -587,15 +566,7 @@ fn compute_io_hash(
         .unwrap();
     sponge.absorb(&u).unwrap();
     sponge.absorb(&hash).unwrap();
-    FpVar::<_>::new_witness(cs.clone(), || {
-        Ok(scalar_to_base(
-            Fr::from_bigint(BigInt::<4>::from_bits_le(
-                &sponge.squeeze_bits(254).unwrap().value().unwrap(),
-            ))
-            .unwrap(),
-        ))
-    })
-    .unwrap()
+    sponge.squeeze_field_elements(1).unwrap().remove(0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -657,16 +628,4 @@ fn compute_r(
     sponge.absorb(latest_hash).unwrap();
     sponge.absorb(&T.to_constraint_field().unwrap()).unwrap();
     sponge.squeeze_field_elements(1).unwrap().remove(0)
-}
-
-// Casts a base field element to a scalar field element.
-fn base_to_scalar(base: Fq) -> Fr {
-    let bigint = base.into_bigint();
-    let mut scalar_limbs = [0u64; 4];
-    scalar_limbs[0] = bigint.0[0];
-    scalar_limbs[1] = bigint.0[1];
-    scalar_limbs[2] = bigint.0[2];
-    scalar_limbs[3] = bigint.0[3];
-    let scalar_bigint = BigInt::<4>(scalar_limbs);
-    Fr::from_bigint(scalar_bigint).unwrap()
 }
