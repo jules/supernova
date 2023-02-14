@@ -25,7 +25,6 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystemRef};
 use ark_serialize::CanonicalSerialize;
 use core::ops::{Add, Mul};
-use itertools::concat;
 use rand_core::OsRng;
 use rayon::prelude::*;
 
@@ -104,11 +103,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
     fn is_satisfied(&self, generators: &[G1Affine]) -> bool {
         // Verify if az * bz = u*cz + E.
-        let z = concat(vec![
-            self.witness.clone(),
-            vec![self.u],
-            self.instance.clone(),
-        ]);
+        let z = vec![vec![self.u], self.instance.clone(), self.witness.clone()].concat();
         let (az, bz, cz) = r1cs_matrix_vec_product(&self.shape.a, &self.shape.b, &self.shape.c, &z);
         if az.len() != self.shape.num_constraints
             || bz.len() != self.shape.num_constraints
@@ -119,9 +114,9 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         // NOTE: constraints are satisfied in the CS, so this is not done correctly. maybe check
         // the vector product code and cross check with the CS structure if it needs to change.
-        // if (0..self.shape.num_constraints).any(|i| az[i] * bz[i] != self.u * cz[i] + self.E[i]) {
-        //     return false;
-        // }
+        (0..self.shape.num_constraints)
+            .for_each(|i| println!("{:?}", az[i] * bz[i] != self.u * cz[i] + self.E[i]));
+        return false;
 
         // Verify if comm_E and comm_witness are commitments to E and witness.
         // NOTE: fix additive homomorphism, may need to have some default commitment we store
@@ -426,16 +421,16 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             &self.shape.a,
             &self.shape.b,
             &self.shape.c,
-            &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
+            &[&[self.u], self.instance.as_slice(), self.witness.as_slice()].concat(),
         );
         let (az2, bz2, cz2) = r1cs_matrix_vec_product(
             &other.shape.a,
             &other.shape.b,
             &other.shape.c,
             &[
-                other.witness.as_slice(),
                 &[other.u],
                 other.instance.as_slice(),
+                other.witness.as_slice(),
             ]
             .concat(),
         );
