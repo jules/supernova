@@ -10,7 +10,7 @@ use ark_crypto_primitives::sponge::{
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ec::AffineRepr;
-use ark_ff::{BigInt, BigInteger, One, PrimeField, Zero};
+use ark_ff::{BigInt, BigInteger, One, PrimeField, UniformRand, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
     boolean::Boolean,
@@ -27,6 +27,7 @@ use ark_relations::r1cs::{ConstraintMatrices, ConstraintSystem, ConstraintSystem
 use ark_serialize::CanonicalSerialize;
 use core::ops::{Add, Mul};
 use itertools::concat;
+use rand_core::OsRng;
 use rayon::prelude::*;
 
 #[derive(CanonicalSerialize)]
@@ -190,23 +191,17 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             FpVar::<Fq>::new_witness(cs.clone(), || Ok(scalar_to_base(latest_hash))).unwrap();
 
         let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+        let one = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
         let is_base_case = FpVar::<_>::is_eq(&i, &zero).unwrap();
 
-        // Synthesize both cases
-        // Base case
-        let W_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::zero())).unwrap();
-        let E_base =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(G1Projective::zero())).unwrap();
-        let u_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::one())).unwrap();
-        let hash_base = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
+        let i_is_one = FpVar::<_>::is_eq(&i, &one).unwrap();
+        let params_select = FpVar::<_>::conditionally_select(&i_is_one, &zero, &params).unwrap();
 
         // Non base case
-        let non_base_case = FpVar::<_>::is_eq(&hash, &hash_base).unwrap();
         let io_hash = compute_io_hash(
             constants,
             &mut cs,
-            &params,
+            &params_select,
             &i,
             &old_pc,
             &z0,
@@ -217,8 +212,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             &hash,
         );
 
-        let comp_hash =
-            FpVar::<Fq>::conditionally_select(&is_base_case, &hash_base, &io_hash).unwrap();
+        let comp_hash = FpVar::<Fq>::conditionally_select(&is_base_case, &zero, &io_hash).unwrap();
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
         // Fold in circuit
@@ -240,27 +234,25 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let rW = latest_witness
             .scalar_mul_le(r.to_bits_le().unwrap().iter())
             .unwrap();
-        let W_fold = comm_W.add(&rW);
+        let W_fold = comm_W.clone().add(&rW);
 
         let rT = T.scalar_mul_le(r.to_bits_le().unwrap().iter()).unwrap();
-        let E_fold = comm_E.add(&rT);
+        let E_fold = comm_E.clone().add(&rT);
 
-        let u_fold = u.add(&r);
+        let u_fold = u.clone().add(&r);
 
         // Fold IO
         let r_hash = latest_hash.clone().mul(&r);
         let hash_fold = hash.add(&r_hash);
 
         // Pick new variables
-        Boolean::<_>::enforce_not_equal(&is_base_case, &non_base_case).unwrap();
-
         let W_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &W_base, &W_fold).unwrap();
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &comm_W, &W_fold).unwrap();
         let E_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &E_base, &E_fold).unwrap();
-        let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u_base, &u_fold).unwrap();
+            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &comm_E, &E_fold).unwrap();
+        let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u, &u_fold).unwrap();
         let hash_new =
-            FpVar::<_>::conditionally_select(&is_base_case, &hash_base, &hash_fold).unwrap();
+            FpVar::<_>::conditionally_select(&is_base_case, &latest_hash, &hash_fold).unwrap();
 
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
@@ -356,11 +348,11 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             "comm_t",
             "comm_t",
         ];
-        println!("COMPUTING R NATIVELY AS");
-        terms
-            .iter()
-            .zip(naming)
-            .for_each(|(v, name)| println!("{} {:?}", name, v));
+        // println!("COMPUTING R NATIVELY AS");
+        // terms
+        //     .iter()
+        //     .zip(naming)
+        //     .for_each(|(v, name)| println!("{} {:?}", name, v));
         sponge.absorb(&terms);
         let r = Fr::from_bigint(BigInt::<4>::from_bits_le(&sponge.squeeze_bits(254))).unwrap();
         let r_base = scalar_to_base(r);
@@ -403,7 +395,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         circuit: C,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
-    ) -> Self {
+    ) -> (Self, Self) {
         let empty_shape = ConstraintMatrices::<Fq> {
             num_instance_variables: z0.len(),
             num_witness_variables: 0,
@@ -418,21 +410,9 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
 
         let mut r1cs = Self {
             shape: empty_shape,
-            comm_witness: G1Affine {
-                x: Fq::zero(),
-                y: Fq::one(),
-                infinity: true,
-            },
-            comm_E: G1Affine {
-                x: Fq::zero(),
-                y: Fq::one(),
-                infinity: true,
-            },
-            comm_T: G1Affine {
-                x: Fq::zero(),
-                y: Fq::one(),
-                infinity: true,
-            },
+            comm_witness: G1Affine::rand(&mut OsRng {}),
+            comm_E: G1Affine::rand(&mut OsRng {}),
+            comm_T: G1Affine::rand(&mut OsRng {}),
             E: vec![],
             witness: vec![],
             instance: vec![],
@@ -445,11 +425,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         // TODO: check if we need to set pc
         let circuit = r1cs.synthesize(
             Fq::zero(),
-            G1Affine {
-                x: Fq::zero(),
-                y: Fq::one(),
-                infinity: true,
-            },
+            G1Affine::rand(&mut OsRng {}),
             Fr::zero(),
             0,
             0,
@@ -458,13 +434,12 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             generators,
         );
         // Reset mutated variables
-        r1cs.output = z0;
         r1cs.hash = Fr::zero();
         r1cs.witness = vec![Fq::zero(); circuit.witness.len()];
         r1cs.instance = vec![Fq::zero(); circuit.instance.len()];
         r1cs.E = vec![Fq::zero(); circuit.shape.num_constraints];
-        r1cs.shape = circuit.shape;
-        r1cs
+        r1cs.shape = circuit.shape.clone();
+        (r1cs, circuit)
     }
 
     fn commit_t(&self, other: &Self, generators: &[G1Affine]) -> (Vec<Fq>, G1Affine) {
@@ -517,16 +492,8 @@ fn create_circuit<C: StepCircuit<Fq>>(
     R1CS {
         shape: matrices.clone(),
         comm_witness: commit(generators, &cs.witness_assignment),
-        comm_E: G1Affine {
-            x: Fq::zero(),
-            y: Fq::one(),
-            infinity: true,
-        },
-        comm_T: G1Affine {
-            x: Fq::zero(),
-            y: Fq::one(),
-            infinity: true,
-        },
+        comm_E: G1Affine::rand(&mut OsRng {}),
+        comm_T: G1Affine::rand(&mut OsRng {}),
         E: vec![Fq::zero(); matrices.num_constraints],
         witness: cs.witness_assignment.clone(),
         instance: cs.instance_assignment[1..].to_vec(),
@@ -582,31 +549,31 @@ fn compute_io_hash(
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    println!(
-        "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
-        params.value().unwrap(),
-        i.value().unwrap(),
-        pc.value().unwrap(),
-        z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
-        output
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_W
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_E
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        u.value().unwrap(),
-        hash.value().unwrap()
-    );
+    // println!(
+    //     "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
+    //     params.value().unwrap(),
+    //     i.value().unwrap(),
+    //     pc.value().unwrap(),
+    //     z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
+    //     output
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_W
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_E
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     u.value().unwrap(),
+    //     hash.value().unwrap()
+    // );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();
@@ -645,36 +612,36 @@ fn compute_r(
     T: &G1AffineVar<Bls12Config>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    println!(
-        "COMPUTING R IN CIRCUIT AS \nparams {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?} \nlatest_witness {:?} \nlatest_hash {:?} \ncomm_t {:?}\n\n",
-        params.value().unwrap(),
-        comm_W
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_E
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        u.value().unwrap(),
-        hash.value().unwrap(),
-        latest_witness
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        latest_hash.value().unwrap(),
-        T.to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-    );
+    // println!(
+    //     "COMPUTING R IN CIRCUIT AS \nparams {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?} \nlatest_witness {:?} \nlatest_hash {:?} \ncomm_t {:?}\n\n",
+    //     params.value().unwrap(),
+    //     comm_W
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_E
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     u.value().unwrap(),
+    //     hash.value().unwrap(),
+    //     latest_witness
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     latest_hash.value().unwrap(),
+    //     T.to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    // );
     sponge.absorb(params).unwrap();
     sponge
         .absorb(&comm_W.to_constraint_field().unwrap())

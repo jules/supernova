@@ -68,6 +68,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             &self.constants,
             &self.generators,
         );
+        println!("CIRCUIT CREATED WITH HASH {:?}", new_latest.hash());
         // Fold natively.
         self.folded[self.pc].fold(
             &self.latest,
@@ -257,9 +258,9 @@ mod tests {
             rate: 2,
             capacity: 1,
         };
-        let base = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
+        let (folded, base) = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
 
-        let folded = [base.clone(); 1];
+        let folded = [folded.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
         proof.update(0);
         verify(&proof).unwrap();
