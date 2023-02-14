@@ -103,9 +103,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 
     fn is_satisfied(&self, generators: &[G1Affine]) -> bool {
-        // NOTE: arkworks generated matrices dont match up in witness/instance size vs matrix
-        // width. need to investigate
-
         // Verify if az * bz = u*cz + E.
         let z = concat(vec![
             self.witness.clone(),
@@ -120,13 +117,14 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             return false;
         }
 
-        // NOTE: fix scalar mul, hasher should squeeze out scalars instead of base fields
+        // NOTE: constraints are satisfied in the CS, so this is not done correctly. maybe check
+        // the vector product code and cross check with the CS structure if it needs to change.
         // if (0..self.shape.num_constraints).any(|i| az[i] * bz[i] != self.u * cz[i] + self.E[i]) {
         //     return false;
         // }
 
         // Verify if comm_E and comm_witness are commitments to E and witness.
-        // NOTE: fix additive homomorphism
+        // NOTE: fix additive homomorphism, may need to have some default commitment we store
         // let comm_witness = commit(generators, &self.witness);
         // let comm_E = commit(generators, &self.E);
         // self.comm_witness == comm_witness && self.comm_E == comm_E
@@ -289,7 +287,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         .unwrap();
 
         cs.finalize();
-        assert_eq!(cs.which_is_unsatisfied().unwrap(), None);
+        debug_assert!(cs.is_satisfied().unwrap());
 
         // Set the new output for later use.
         self.output = output
@@ -297,7 +295,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
-        println!("CREATING CIRCUIT WITH {:?}", hash.value().unwrap());
         create_circuit(cs, generators, hash.value().unwrap(), self.circuit.clone())
     }
 
@@ -432,9 +429,9 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             &[self.witness.as_slice(), &[self.u], self.instance.as_slice()].concat(),
         );
         let (az2, bz2, cz2) = r1cs_matrix_vec_product(
-            &self.shape.a,
-            &self.shape.b,
-            &self.shape.c,
+            &other.shape.a,
+            &other.shape.b,
+            &other.shape.c,
             &[
                 other.witness.as_slice(),
                 &[other.u],
@@ -527,31 +524,31 @@ fn compute_io_hash(
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    println!(
-        "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
-        params.value().unwrap(),
-        i.value().unwrap(),
-        pc.value().unwrap(),
-        z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
-        output
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_W
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_E
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        u.value().unwrap(),
-        hash.value().unwrap()
-    );
+    // println!(
+    //     "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
+    //     params.value().unwrap(),
+    //     i.value().unwrap(),
+    //     pc.value().unwrap(),
+    //     z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
+    //     output
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_W
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     comm_E
+    //         .to_constraint_field()
+    //         .unwrap()
+    //         .iter()
+    //         .map(|v| v.value().unwrap())
+    //         .collect::<Vec<Fq>>(),
+    //     u.value().unwrap(),
+    //     hash.value().unwrap()
+    // );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();

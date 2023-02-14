@@ -68,7 +68,6 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             &self.constants,
             &self.generators,
         );
-        println!("CIRCUIT CREATED WITH HASH {:?}", new_latest.hash());
         // Fold natively.
         self.folded[self.pc].fold(
             &self.latest,
@@ -173,11 +172,11 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
         "comm_e", "u", "hash",
     ];
-    println!("HASHING NATIVE WITH");
-    terms
-        .iter()
-        .zip(naming)
-        .for_each(|(v, name)| println!("{} {:?}", name, v));
+    // println!("HASHING NATIVE WITH");
+    // terms
+    //     .iter()
+    //     .zip(naming)
+    //     .for_each(|(v, name)| println!("{} {:?}", name, v));
     sponge.absorb(&terms);
     sponge.squeeze_native_field_elements(1)[0]
 }
