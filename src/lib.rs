@@ -15,7 +15,7 @@ use ark_crypto_primitives::sponge::{
     poseidon::{find_poseidon_ark_and_mds, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
-use ark_ff::{BigInt, BigInteger, PrimeField, Zero};
+use ark_ff::{PrimeField, Zero};
 
 /// A SuperNova proof, which keeps track of a variable amount of loose circuits,
 /// a most recent instance-witness pair, a program counter and the iteration

@@ -3,17 +3,16 @@
 
 use super::StepCircuit;
 use crate::{commit, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine, G1Projective};
+use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
     CryptographicSponge, FieldBasedCryptographicSponge,
 };
 use ark_ec::AffineRepr;
-use ark_ff::{BigInt, BigInteger, One, PrimeField, UniformRand, Zero};
+use ark_ff::{One, PrimeField, UniformRand, Zero};
 use ark_r1cs_std::{
     alloc::AllocVar,
-    boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
     groups::{
