@@ -80,67 +80,62 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         self.i += 1;
     }
 
+    /// Verify a SuperNova proof.
+    pub fn verify(&self) -> Result<(), VerificationError<Fq>> {
+        // If this is only the first iteration, we can skip the other checks,
+        // as no computation has been folded.
+        if self.i == 1 {
+            if self.folded.iter().any(|pair| pair.has_crossterms()) {
+                return Err(VerificationError::ExpectedBaseCase);
+            }
+
+            if self.latest.has_crossterms() {
+                return Err(VerificationError::ExpectedBaseCase);
+            }
+
+            return Ok(());
+        }
+
+        // Check that the public IO of the latest instance includes
+        // the correct hash.
+        let hash = hash_public_io(&self.constants, &self.folded, self.i, self.pc);
+        if self.latest.hash() != hash {
+            return Err(VerificationError::HashMismatch(hash, self.latest.hash()));
+        }
+
+        // Ensure PC is within range.
+        if self.pc > self.folded.len() {
+            return Err(VerificationError::PCOutOfRange(self.pc, self.folded.len()));
+        }
+
+        // Ensure the latest instance has no crossterms.
+        if self.latest.has_crossterms() {
+            return Err(VerificationError::UnexpectedCrossterms);
+        }
+
+        // Ensure all folded instance/witness pairs are satisfied.
+        if self
+            .folded
+            .iter()
+            .any(|pair| !pair.is_satisfied(&self.generators))
+        {
+            return Err(VerificationError::UnsatisfiedCircuit);
+        }
+
+        // Ensure the latest instance/witness pair is satisfied.
+        if !self.latest.is_satisfied(&self.generators) {
+            return Err(VerificationError::UnsatisfiedCircuit);
+        }
+
+        Ok(())
+    }
+
     fn params(&self) -> Fq {
         self.folded
             .iter()
             .map(|p| p.params(&self.constants))
             .fold(Fq::zero(), |acc, x| acc + x)
     }
-}
-
-/// Verify a SuperNova proof.
-pub fn verify<A: Arithmetization, const L: usize>(
-    proof: &Proof<A, L>,
-) -> Result<(), VerificationError<Fq>> {
-    // If this is only the first iteration, we can skip the other checks,
-    // as no computation has been folded.
-    if proof.i == 1 {
-        if proof.folded.iter().any(|pair| pair.has_crossterms()) {
-            return Err(VerificationError::ExpectedBaseCase);
-        }
-
-        if proof.latest.has_crossterms() {
-            return Err(VerificationError::ExpectedBaseCase);
-        }
-
-        return Ok(());
-    }
-
-    // Check that the public IO of the latest instance includes
-    // the correct hash.
-    let hash = hash_public_io(&proof.constants, &proof.folded, proof.i, proof.pc);
-    if proof.latest.hash() != hash {
-        return Err(VerificationError::HashMismatch(hash, proof.latest.hash()));
-    }
-
-    // Ensure PC is within range.
-    if proof.pc > proof.folded.len() {
-        return Err(VerificationError::PCOutOfRange(
-            proof.pc,
-            proof.folded.len(),
-        ));
-    }
-
-    // Ensure the latest instance has no crossterms.
-    if proof.latest.has_crossterms() {
-        return Err(VerificationError::UnexpectedCrossterms);
-    }
-
-    // Ensure all folded instance/witness pairs are satisfied.
-    if proof
-        .folded
-        .iter()
-        .any(|pair| !pair.is_satisfied(&proof.generators))
-    {
-        return Err(VerificationError::UnsatisfiedCircuit);
-    }
-
-    // Ensure the latest instance/witness pair is satisfied.
-    if !proof.latest.is_satisfied(&proof.generators) {
-        return Err(VerificationError::UnsatisfiedCircuit);
-    }
-
-    Ok(())
 }
 
 pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
@@ -249,12 +244,12 @@ mod tests {
         let folded = [folded.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
         // Check base case verification.
-        verify(&proof).unwrap();
+        proof.verify().unwrap();
 
         // Fold and verify two steps of computation.
         for _ in 0..2 {
             proof.update(0);
-            verify(&proof).unwrap();
+            proof.verify().unwrap();
         }
     }
 
@@ -312,18 +307,18 @@ mod tests {
             [Box::new(folded1), Box::new(folded2)];
         let mut proof = Proof::<R1CS<_>, 2>::new(folded, base, generators);
         // Check base case verification.
-        verify(&proof).unwrap();
+        proof.verify().unwrap();
 
         // Fold and verify two steps of computation for the first circuit.
         for _ in 0..2 {
             proof.update(0);
-            verify(&proof).unwrap();
+            proof.verify().unwrap();
         }
 
         // Fold and verify two steps of computation for the second circuit.
         for _ in 0..2 {
             proof.update(1);
-            verify(&proof).unwrap();
+            proof.verify().unwrap();
         }
     }
 }
