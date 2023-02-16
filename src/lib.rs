@@ -258,6 +258,72 @@ mod tests {
         }
     }
 
+    #[derive(Default, Clone)]
+    struct SquareCircuit<F: PrimeField> {
+        _p: PhantomData<F>,
+    }
+
+    impl<F: PrimeField> StepCircuit<F> for SquareCircuit<F> {
+        fn generate_constraints(
+            &self,
+            cs: ConstraintSystemRef<F>,
+            z: &[FpVar<F>],
+        ) -> Result<Vec<FpVar<F>>> {
+            // Consider a cubic equation: `x^2 + x + 5 = y`, where `x` and `y` are respectively the
+            // input and output.
+            let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value()?))?;
+            let x_sq = x.square()?;
+            let y = FpVar::<_>::new_witness(cs.clone(), || {
+                Ok(x_sq.value()? + x.value()? + F::from(5u64))
+            })?;
+            x_sq.add(&x)
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .add(&FpVar::<_>::one())
+                .enforce_equal(&y)?;
+
+            Ok(vec![y])
+        }
+    }
+
     #[test]
-    fn test_multi_circuit() {}
+    fn test_multi_circuit() {
+        // TODO: can we infer generator size
+        let generators = create_generators(30000);
+        let circuit1 = CubicCircuit::<Fq>::default();
+        let circuit2 = SquareCircuit::<Fq>::default();
+        let (ark, mds) =
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+        let constants = PoseidonConfig {
+            full_rounds: 8,
+            partial_rounds: 31,
+            alpha: 17,
+            ark,
+            mds,
+            rate: 2,
+            capacity: 1,
+        };
+        let (folded1, base) = R1CS::new(vec![Fq::one()], circuit1, &constants, &generators);
+        let (folded2, base) = R1CS::new(vec![Fq::one()], circuit2, &constants, &generators);
+
+        let folded: [Box<dyn Arithmetization<ConstraintSystem = ConstraintSystemRef<Fq>>>; 2] =
+            [Box::new(folded1), Box::new(folded2)];
+        let mut proof = Proof::<R1CS<_>, 2>::new(folded, base, generators);
+        // Check base case verification.
+        verify(&proof).unwrap();
+
+        // Fold and verify two steps of computation for the first circuit.
+        for _ in 0..2 {
+            proof.update(0);
+            verify(&proof).unwrap();
+        }
+
+        // Fold and verify two steps of computation for the second circuit.
+        for _ in 0..2 {
+            proof.update(1);
+            verify(&proof).unwrap();
+        }
+    }
 }

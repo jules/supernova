@@ -8,7 +8,7 @@ use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 
 /// A foldable circuit representation.
-pub trait Arithmetization: Sized {
+pub trait Arithmetization {
     type ConstraintSystem;
 
     // Returns the latest IO hash.
