@@ -135,7 +135,6 @@ pub fn verify<A: Arithmetization, const L: usize>(
         return Err(VerificationError::UnsatisfiedCircuit);
     }
 
-    println!("folded is fine");
     // Ensure the latest instance/witness pair is satisfied.
     if !proof.latest.is_satisfied(&proof.generators) {
         return Err(VerificationError::UnsatisfiedCircuit);
@@ -245,14 +244,17 @@ mod tests {
             rate: 2,
             capacity: 1,
         };
+        println!("generating proof");
         let (folded, base) = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
 
         let folded = [folded.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
+        println!("first update");
         proof.update(0);
         verify(&proof).unwrap();
 
         // Update with a next step
+        println!("second update");
         proof.update(0);
         verify(&proof).unwrap();
     }

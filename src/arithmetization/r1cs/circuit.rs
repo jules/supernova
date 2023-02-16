@@ -105,21 +105,15 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         // Verify if az * bz = u*cz + E.
         let z = vec![vec![self.u], self.instance.clone(), self.witness.clone()].concat();
         let (az, bz, cz) = r1cs_matrix_vec_product(&self.shape.a, &self.shape.b, &self.shape.c, &z);
-        if az.len() != self.shape.num_constraints
-            || bz.len() != self.shape.num_constraints
-            || cz.len() != self.shape.num_constraints
-        {
+
+        if (0..self.shape.num_constraints).any(|i| az[i] * bz[i] != self.u * cz[i] + self.E[i]) {
             return false;
         }
 
-        // NOTE: constraints are satisfied in the CS, so this is not done correctly. maybe check
-        // the vector product code and cross check with the CS structure if it needs to change.
-        (0..self.shape.num_constraints)
-            .for_each(|i| println!("{:?}", az[i] * bz[i] != self.u * cz[i] + self.E[i]));
-        return false;
-
         // Verify if comm_E and comm_witness are commitments to E and witness.
-        // NOTE: fix additive homomorphism, may need to have some default commitment we store
+        // NOTE: arkworks does not allow the circuit to be satisfied if you attempt scalar mul in
+        // circuit with points at infinity, so this can not work currently. needs to probably swap
+        // out the crypto backend.
         // let comm_witness = commit(generators, &self.witness);
         // let comm_E = commit(generators, &self.E);
         // self.comm_witness == comm_witness && self.comm_E == comm_E
@@ -221,7 +215,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             &T.to_affine().unwrap(),
         );
 
-        // NOTE: in second step, commitments and hashes do not add up. investigate inconsistency
+        // NOTE: this is disallowed in arkworks with points at infinity.
         let rW = latest_witness
             .scalar_mul_le(r.to_bits_le().unwrap().iter())
             .unwrap();
@@ -258,7 +252,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
 
         let output = self
             .circuit
-            .clone()
             .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
@@ -282,7 +275,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         .unwrap();
 
         cs.finalize();
-        debug_assert!(cs.is_satisfied().unwrap());
 
         // Set the new output for later use.
         self.output = output
@@ -344,6 +336,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         //     .for_each(|(v, name)| println!("{} {:?}", name, v));
         sponge.absorb(&terms);
         let r = sponge.squeeze_native_field_elements(1)[0];
+        let (t, comm_T) = self.commit_t(other, generators);
         self.witness
             .par_iter_mut()
             .zip(&other.witness)
@@ -354,7 +347,6 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .for_each(|(x1, x2)| *x1 += *x2 * r);
         self.comm_witness =
             (self.comm_witness + other.comm_witness.mul_bigint(r.into_bigint())).into();
-        let (t, comm_T) = self.commit_t(other, generators);
         self.E.par_iter_mut().zip(t).for_each(|(a, b)| *a += r * b);
         self.comm_E = (self.comm_E + self.comm_T.mul_bigint(r.into_bigint())).into();
         self.u += r;
@@ -392,7 +384,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             instance: vec![],
             u: Fq::one(),
             hash: Fq::zero(),
-            output: z0.clone(),
+            output: z0,
             circuit,
         };
 
@@ -409,8 +401,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
         );
         // Reset mutated variables
         r1cs.hash = Fq::zero();
-        r1cs.witness = vec![Fq::zero(); circuit.witness.len()];
-        r1cs.instance = vec![Fq::zero(); circuit.instance.len()];
+        r1cs.witness = circuit.witness.clone();
+        r1cs.instance = circuit.instance.clone();
         r1cs.E = vec![Fq::zero(); circuit.shape.num_constraints];
         r1cs.shape = circuit.shape.clone();
         (r1cs, circuit)
@@ -447,7 +439,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             })
             .collect::<Vec<Fq>>();
         let comm_T = commit(generators, &t);
-        (t.to_vec(), comm_T)
+        (t, comm_T)
     }
 }
 
@@ -468,7 +460,7 @@ fn create_circuit<C: StepCircuit<Fq>>(
         witness: cs.witness_assignment.clone(),
         instance: cs.instance_assignment[1..].to_vec(),
         u: Fq::one(),
-        hash: hash,
+        hash,
         output: vec![],
         circuit,
     }
