@@ -67,7 +67,7 @@ impl SerializableShape {
 }
 
 #[derive(Clone)]
-pub struct R1CS<C: StepCircuit<Fq>> {
+pub struct R1CS {
     pub(crate) shape: ConstraintMatrices<Fq>,
     pub(crate) comm_witness: G1Affine,
     pub(crate) comm_E: G1Affine,
@@ -78,10 +78,9 @@ pub struct R1CS<C: StepCircuit<Fq>> {
     pub(crate) u: Fq,
     pub(crate) hash: Fq,
     pub(crate) output: Vec<Fq>,
-    pub(crate) circuit: C,
 }
 
-impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
+impl Arithmetization for R1CS {
     type ConstraintSystem = ConstraintSystemRef<Fq>;
 
     fn hash(&self) -> Fq {
@@ -101,7 +100,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         ]
     }
 
-    fn is_satisfied(&self, generators: &[G1Affine]) -> bool {
+    fn is_satisfied(&self, _generators: &[G1Affine]) -> bool {
         // Verify if az * bz = u*cz + E.
         let z = vec![vec![self.u], self.instance.clone(), self.witness.clone()].concat();
         let (az, bz, cz) = r1cs_matrix_vec_product(&self.shape.a, &self.shape.b, &self.shape.c, &z);
@@ -136,7 +135,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         vec![Fq::zero(); self.output().len()]
     }
 
-    fn synthesize(
+    fn synthesize<C: StepCircuit<Fq>>(
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
@@ -146,7 +145,8 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         i: usize,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
-    ) -> R1CS<C> {
+        circuit: &C,
+    ) -> R1CS {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
         let mut cs = ConstraintSystem::<Fq>::new_ref();
@@ -182,6 +182,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         let i_is_one = FpVar::<_>::is_eq(&i, &one).unwrap();
         let params_select = FpVar::<_>::conditionally_select(&i_is_one, &zero, &params).unwrap();
 
+        println!("{}", cs.num_constraints());
         // Non base case
         let io_hash = compute_io_hash(
             constants,
@@ -198,6 +199,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         );
 
         let comp_hash = FpVar::<Fq>::conditionally_select(&is_base_case, &zero, &io_hash).unwrap();
+        println!("{}", cs.num_constraints());
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
         // Fold in circuit
@@ -250,8 +252,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             })
             .collect::<Vec<FpVar<Fq>>>();
 
-        let output = self
-            .circuit
+        let output = circuit
             .generate_constraints(cs.clone(), &new_input)
             .expect("should be able to synthesize step circuit");
 
@@ -275,6 +276,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
         .unwrap();
 
         cs.finalize();
+        assert_eq!(cs.which_is_unsatisfied().unwrap(), None);
 
         // Set the new output for later use.
         self.output = output
@@ -282,7 +284,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
-        create_circuit(cs, generators, hash.value().unwrap(), self.circuit.clone())
+        create_circuit(cs, generators, hash.value().unwrap())
     }
 
     fn fold(
@@ -355,10 +357,10 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 }
 
-impl<C: StepCircuit<Fq>> R1CS<C> {
-    pub fn new(
+impl R1CS {
+    pub fn new<C: StepCircuit<Fq>>(
         z0: Vec<Fq>,
-        circuit: C,
+        c: &C,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
     ) -> (Self, Self) {
@@ -387,7 +389,6 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             u: Fq::one(),
             hash: Fq::zero(),
             output: z0,
-            circuit,
         };
 
         // TODO: check if we need to set pc
@@ -400,6 +401,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             0,
             constants,
             generators,
+            c,
         );
 
         // Reset mutated variables
@@ -455,12 +457,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
     }
 }
 
-fn create_circuit<C: StepCircuit<Fq>>(
-    cs: ConstraintSystemRef<Fq>,
-    generators: &[G1Affine],
-    hash: Fq,
-    circuit: C,
-) -> R1CS<C> {
+fn create_circuit(cs: ConstraintSystemRef<Fq>, generators: &[G1Affine], hash: Fq) -> R1CS {
     let matrices = cs.to_matrices().unwrap();
     let cs = cs.borrow().unwrap();
     // NOTE: we randomise commitments as points at infinity are not casted the same natively
@@ -476,7 +473,6 @@ fn create_circuit<C: StepCircuit<Fq>>(
         u: Fq::one(),
         hash,
         output: vec![],
-        circuit,
     }
 }
 
@@ -525,31 +521,31 @@ fn compute_io_hash(
     hash: &FpVar<Fq>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    // println!(
-    //     "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
-    //     params.value().unwrap(),
-    //     i.value().unwrap(),
-    //     pc.value().unwrap(),
-    //     z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
-    //     output
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     comm_W
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     comm_E
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     u.value().unwrap(),
-    //     hash.value().unwrap()
-    // );
+    println!(
+        "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
+        params.value().unwrap(),
+        i.value().unwrap(),
+        pc.value().unwrap(),
+        z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
+        output
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_W
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_E
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        u.value().unwrap(),
+        hash.value().unwrap()
+    );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();

@@ -3,6 +3,7 @@
 //! Additionally, includes a model which defines this functionality for R1CS.
 
 pub mod r1cs;
+pub use r1cs::step_circuit::StepCircuit;
 
 use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
@@ -37,7 +38,7 @@ pub trait Arithmetization {
     fn z0(&self) -> Vec<Fq>;
 
     #[allow(clippy::too_many_arguments)]
-    fn synthesize(
+    fn synthesize<C: StepCircuit<Fq>>(
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
@@ -47,6 +48,7 @@ pub trait Arithmetization {
         i: usize,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
+        circuit: &C,
     ) -> Self;
 
     fn fold(

@@ -36,7 +36,6 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         // TODO: these parameters might not be optimal/secure for Fq.
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
-        let i = folded.len();
         Self {
             constants: PoseidonConfig {
                 full_rounds: 8,
@@ -51,12 +50,12 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             folded,
             latest,
             pc: 0,
-            i,
+            i: 1,
         }
     }
 
     /// Update a SuperNova proof with a new circuit.
-    pub fn update(&mut self, pc: usize) {
+    pub fn update<C: StepCircuit<Fq>>(&mut self, pc: usize, circuit: &C) {
         // Fold in-circuit to produce new Arithmetization.
         let new_latest = self.folded[self.pc].synthesize(
             self.params(),
@@ -67,6 +66,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             self.i,
             &self.constants,
             &self.generators,
+            circuit,
         );
         // Fold natively.
         self.folded[self.pc].fold(
@@ -166,11 +166,11 @@ pub(crate) fn hash_public_io<A: Arithmetization, const L: usize>(
         "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
         "comm_e", "u", "hash",
     ];
-    // println!("HASHING NATIVE WITH");
-    // terms
-    //     .iter()
-    //     .zip(naming)
-    //     .for_each(|(v, name)| println!("{} {:?}", name, v));
+    println!("HASHING NATIVE WITH");
+    terms
+        .iter()
+        .zip(naming)
+        .for_each(|(v, name)| println!("{} {:?}", name, v));
     sponge.absorb(&terms);
     sponge.squeeze_native_field_elements(1)[0]
 }
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn test_single_circuit() {
+    fn test_single_circuit_r1cs() {
         // TODO: can we infer generator size
         let generators = create_generators(30000);
         let circuit = CubicCircuit::<Fq>::default();
@@ -239,16 +239,16 @@ mod tests {
             rate: 2,
             capacity: 1,
         };
-        let (folded, base) = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
+        let (folded, base) = R1CS::new(vec![Fq::one()], &circuit, &constants, &generators);
 
         let folded = [folded.clone(); 1];
-        let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
+        let mut proof = Proof::<R1CS, 1>::new(folded, base, generators);
         // Check base case verification.
         proof.verify().unwrap();
 
         // Fold and verify two steps of computation.
         for _ in 0..2 {
-            proof.update(0);
+            proof.update(0, &circuit);
             proof.verify().unwrap();
         }
     }
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multi_circuit() {
+    fn test_multi_circuit_r1cs() {
         // TODO: can we infer generator size
         let generators = create_generators(30000);
         let circuit1 = CubicCircuit::<Fq>::default();
@@ -300,24 +300,23 @@ mod tests {
             rate: 2,
             capacity: 1,
         };
-        let (folded1, base) = R1CS::new(vec![Fq::one()], circuit1, &constants, &generators);
-        let (folded2, base) = R1CS::new(vec![Fq::one()], circuit2, &constants, &generators);
+        let (folded1, base) = R1CS::new(vec![Fq::one()], &circuit1, &constants, &generators);
+        let (folded2, _) = R1CS::new(vec![Fq::one()], &circuit2, &constants, &generators);
 
-        let folded: [Box<dyn Arithmetization<ConstraintSystem = ConstraintSystemRef<Fq>>>; 2] =
-            [Box::new(folded1), Box::new(folded2)];
-        let mut proof = Proof::<R1CS<_>, 2>::new(folded, base, generators);
+        let folded: [R1CS; 2] = [folded1, folded2];
+        let mut proof = Proof::<R1CS, 2>::new(folded, base, generators);
         // Check base case verification.
         proof.verify().unwrap();
 
         // Fold and verify two steps of computation for the first circuit.
         for _ in 0..2 {
-            proof.update(0);
+            proof.update(0, &circuit1);
             proof.verify().unwrap();
         }
 
         // Fold and verify two steps of computation for the second circuit.
         for _ in 0..2 {
-            proof.update(1);
+            proof.update(1, &circuit2);
             proof.verify().unwrap();
         }
     }
