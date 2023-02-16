@@ -374,6 +374,8 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             c: vec![],
         };
 
+        // NOTE: we randomise commitments as points at infinity are not casted the same natively
+        // and in-circuit, which leads to hash discrepancies.
         let mut r1cs = Self {
             shape: empty_shape,
             comm_witness: G1Affine::rand(&mut OsRng {}),
@@ -461,6 +463,8 @@ fn create_circuit<C: StepCircuit<Fq>>(
 ) -> R1CS<C> {
     let matrices = cs.to_matrices().unwrap();
     let cs = cs.borrow().unwrap();
+    // NOTE: we randomise commitments as points at infinity are not casted the same natively
+    // and in-circuit, which leads to hash discrepancies.
     R1CS {
         shape: matrices.clone(),
         comm_witness: commit(generators, &cs.witness_assignment),

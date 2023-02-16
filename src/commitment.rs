@@ -6,7 +6,6 @@ use ark_ff::{PrimeField, UniformRand, Zero};
 use rand_core::OsRng;
 use rayon::prelude::*;
 
-// TODO: this is janky and should be updated
 pub fn create_generators(n: usize) -> Vec<G1Affine> {
     let cap = n.next_power_of_two();
     let mut gens: Vec<G1Affine> = Vec::with_capacity(cap);
