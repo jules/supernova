@@ -1,4 +1,4 @@
-//! This library implements the SuperNova prover-verifier algorithm, and is generic
+//! This library implements the SuperNova IVC prover-verifier algorithm, and is generic
 //! over any kind of arithmetization, as long as it implements the [`Arithmetization`] trait.
 
 #![allow(non_snake_case)]
