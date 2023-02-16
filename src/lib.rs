@@ -95,7 +95,7 @@ pub fn verify<A: Arithmetization, const L: usize>(
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
     if proof.i == 1 {
-        if proof.folded.iter().any(|pair| !pair.has_crossterms()) {
+        if proof.folded.iter().any(|pair| pair.has_crossterms()) {
             return Err(VerificationError::ExpectedBaseCase);
         }
 
@@ -244,19 +244,18 @@ mod tests {
             rate: 2,
             capacity: 1,
         };
-        println!("generating proof");
         let (folded, base) = R1CS::new(vec![Fq::one()], circuit, &constants, &generators);
 
         let folded = [folded.clone(); 1];
         let mut proof = Proof::<R1CS<CubicCircuit<Fq>>, 1>::new(folded, base, generators);
-        println!("first update");
-        proof.update(0);
+        // Check base case verification.
         verify(&proof).unwrap();
 
-        // Update with a next step
-        println!("second update");
-        proof.update(0);
-        verify(&proof).unwrap();
+        // Fold and verify two steps of computation.
+        for _ in 0..2 {
+            proof.update(0);
+            verify(&proof).unwrap();
+        }
     }
 
     #[test]

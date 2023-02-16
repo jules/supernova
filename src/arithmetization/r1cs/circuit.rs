@@ -129,7 +129,7 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
     }
 
     fn has_crossterms(&self) -> bool {
-        self.E.iter().any(|v| !v.is_zero()) && self.u != Fq::one()
+        self.E.iter().any(|v| !v.is_zero()) || self.u != Fq::one()
     }
 
     fn z0(&self) -> Vec<Fq> {
@@ -399,6 +399,7 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
             constants,
             generators,
         );
+
         // Reset mutated variables
         r1cs.hash = Fq::zero();
         r1cs.witness = circuit.witness.clone();
