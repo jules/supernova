@@ -94,7 +94,7 @@ pub fn verify<A: Arithmetization, const L: usize>(
 ) -> Result<(), VerificationError<Fq>> {
     // If this is only the first iteration, we can skip the other checks,
     // as no computation has been folded.
-    if proof.i == 0 {
+    if proof.i == 1 {
         if proof.folded.iter().any(|pair| !pair.has_crossterms()) {
             return Err(VerificationError::ExpectedBaseCase);
         }
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_single_circuit() {
         // TODO: can we infer generator size
-        let generators = create_generators(1000);
+        let generators = create_generators(30000);
         let circuit = CubicCircuit::<Fq>::default();
         let (ark, mds) =
             find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);

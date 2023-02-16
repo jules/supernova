@@ -329,11 +329,11 @@ impl<C: StepCircuit<Fq>> Arithmetization for R1CS<C> {
             "comm_t",
             "comm_t",
         ];
-        // println!("COMPUTING R NATIVELY AS");
-        // terms
-        //     .iter()
-        //     .zip(naming)
-        //     .for_each(|(v, name)| println!("{} {:?}", name, v));
+        println!("COMPUTING R NATIVELY AS");
+        terms
+            .iter()
+            .zip(naming)
+            .for_each(|(v, name)| println!("{} {:?}", name, v));
         sponge.absorb(&terms);
         let r = sponge.squeeze_native_field_elements(1)[0];
         let (t, comm_T) = self.commit_t(other, generators);
@@ -438,7 +438,16 @@ impl<C: StepCircuit<Fq>> R1CS<C> {
                 az1 * bz2 + az2 * bz1 - self.u * cz2 - cz1
             })
             .collect::<Vec<Fq>>();
-        let comm_T = commit(generators, &t);
+        let mut comm_T = commit(generators, &t);
+
+        // NOTE: During our first fold in the base case, we may generate a commitment point that's at
+        // infinity. In this case, we need to ensure that the point isn't at infinity, otherwise
+        // the circuit is no longer satisfiable. This is due to some peculiarty, likely in
+        // arkworks, that needs to be investigated.
+        if comm_T.infinity {
+            comm_T = G1Affine::rand(&mut OsRng {});
+        }
+
         (t, comm_T)
     }
 }
@@ -566,36 +575,36 @@ fn compute_r(
     T: &G1AffineVar<Bls12Config>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    // println!(
-    //     "COMPUTING R IN CIRCUIT AS \nparams {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?} \nlatest_witness {:?} \nlatest_hash {:?} \ncomm_t {:?}\n\n",
-    //     params.value().unwrap(),
-    //     comm_W
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     comm_E
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     u.value().unwrap(),
-    //     hash.value().unwrap(),
-    //     latest_witness
-    //         .to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    //     latest_hash.value().unwrap(),
-    //     T.to_constraint_field()
-    //         .unwrap()
-    //         .iter()
-    //         .map(|v| v.value().unwrap())
-    //         .collect::<Vec<Fq>>(),
-    // );
+    println!(
+        "COMPUTING R IN CIRCUIT AS \nparams {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?} \nlatest_witness {:?} \nlatest_hash {:?} \ncomm_t {:?}\n\n",
+        params.value().unwrap(),
+        comm_W
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        comm_E
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        u.value().unwrap(),
+        hash.value().unwrap(),
+        latest_witness
+            .to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+        latest_hash.value().unwrap(),
+        T.to_constraint_field()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().unwrap())
+            .collect::<Vec<Fq>>(),
+    );
     sponge.absorb(params).unwrap();
     sponge
         .absorb(&comm_W.to_constraint_field().unwrap())
