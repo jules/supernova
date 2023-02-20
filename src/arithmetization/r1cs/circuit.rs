@@ -183,7 +183,6 @@ impl Arithmetization for R1CS {
         let i_is_one = FpVar::<_>::is_eq(&i, &one).unwrap();
         let params_select = FpVar::<_>::conditionally_select(&i_is_one, &zero, &params).unwrap();
 
-        println!("{}", cs.num_constraints());
         // Non base case
         let io_hash = compute_io_hash(
             constants,
@@ -200,7 +199,6 @@ impl Arithmetization for R1CS {
         );
 
         let comp_hash = FpVar::<Fq>::conditionally_select(&is_base_case, &zero, &io_hash).unwrap();
-        println!("{}", cs.num_constraints());
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
         // Fold in circuit
@@ -283,7 +281,22 @@ impl Arithmetization for R1CS {
             .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
-        create_circuit(cs, generators, hash.value().unwrap())
+        let matrices = cs.to_matrices().unwrap();
+        let cs = cs.borrow().unwrap();
+        // NOTE: we randomise commitments as points at infinity are not casted the same natively
+        // and in-circuit, which leads to hash discrepancies.
+        R1CS {
+            shape: matrices.clone(),
+            comm_witness: commit(generators, &cs.witness_assignment),
+            comm_E: G1Affine::rand(&mut OsRng {}),
+            comm_T: G1Affine::rand(&mut OsRng {}),
+            E: vec![Fq::zero(); matrices.num_constraints],
+            witness: cs.witness_assignment.clone(),
+            instance: cs.instance_assignment[1..].to_vec(),
+            u: Fq::one(),
+            hash: hash.value().unwrap(),
+            output: vec![],
+        }
     }
 
     fn fold(
@@ -468,25 +481,6 @@ impl R1CS {
             sparse_matrix_vec_product(&self.shape.b, &z),
             sparse_matrix_vec_product(&self.shape.c, &z),
         )
-    }
-}
-
-fn create_circuit(cs: ConstraintSystemRef<Fq>, generators: &[G1Affine], hash: Fq) -> R1CS {
-    let matrices = cs.to_matrices().unwrap();
-    let cs = cs.borrow().unwrap();
-    // NOTE: we randomise commitments as points at infinity are not casted the same natively
-    // and in-circuit, which leads to hash discrepancies.
-    R1CS {
-        shape: matrices.clone(),
-        comm_witness: commit(generators, &cs.witness_assignment),
-        comm_E: G1Affine::rand(&mut OsRng {}),
-        comm_T: G1Affine::rand(&mut OsRng {}),
-        E: vec![Fq::zero(); matrices.num_constraints],
-        witness: cs.witness_assignment.clone(),
-        instance: cs.instance_assignment[1..].to_vec(),
-        u: Fq::one(),
-        hash,
-        output: vec![],
     }
 }
 
