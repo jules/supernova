@@ -218,7 +218,7 @@ impl Arithmetization for R1CS {
             &T.to_affine().unwrap(),
         );
 
-        // NOTE: this is disallowed in arkworks with points at infinity.
+        // NOTE: this is unsatisfiable in arkworks with points at infinity.
         let rW = latest_witness
             .scalar_mul_le(r.to_bits_le().unwrap().iter())
             .unwrap();
@@ -337,6 +337,7 @@ impl Arithmetization for R1CS {
             .iter()
             .zip(naming)
             .for_each(|(v, name)| println!("{} {:?}", name, v));
+        println!("\n");
         sponge.absorb(&terms);
         let r = sponge.squeeze_native_field_elements(1)[0];
         let (t, comm_T) = self.commit_t(other, generators);

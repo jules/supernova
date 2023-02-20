@@ -54,7 +54,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         }
     }
 
-    /// Update a SuperNova proof with a new circuit.
+    /// Update a SuperNova proof with a new invocation of the augmented step circuit.
     pub fn update<C: StepCircuit<Fq>>(&mut self, pc: usize, circuit: &C) {
         // Fold in-circuit to produce new Arithmetization.
         let new_latest = self.folded[self.pc].synthesize(
@@ -141,7 +141,6 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     // Returns a hash of the 'public IO' for verification purposes. This hash should match the hash
     // created in the augmented step circuit.
     fn hash_public_io(&self) -> Fq {
-        // TODO: validate parameters
         let mut sponge = PoseidonSponge::<Fq>::new(&self.constants);
         let terms = [self
             .folded
@@ -263,7 +262,7 @@ mod tests {
             cs: ConstraintSystemRef<F>,
             z: &[FpVar<F>],
         ) -> Result<Vec<FpVar<F>>> {
-            // Consider a cubic equation: `x^2 + x + 5 = y`, where `x` and `y` are respectively the
+            // Consider a square equation: `x^2 + x + 5 = y`, where `x` and `y` are respectively the
             // input and output.
             let x = FpVar::<_>::new_input(cs.clone(), || Ok(z[0].value()?))?;
             let x_sq = x.square()?;
@@ -284,7 +283,6 @@ mod tests {
 
     #[test]
     fn test_multi_circuit_r1cs() {
-        // TODO: can we infer generator size
         let generators = create_generators(30000);
         let circuit1 = CubicCircuit::<Fq>::default();
         let circuit2 = SquareCircuit::<Fq>::default();
@@ -307,14 +305,10 @@ mod tests {
         // Check base case verification.
         proof.verify().unwrap();
 
-        // Fold and verify two steps of computation for the first circuit.
+        // Fold and verify two steps of computation for each circuit, in interlocked fashion.
         for _ in 0..2 {
             proof.update(0, &circuit1);
             proof.verify().unwrap();
-        }
-
-        // Fold and verify two steps of computation for the second circuit.
-        for _ in 0..2 {
             proof.update(1, &circuit2);
             proof.verify().unwrap();
         }
