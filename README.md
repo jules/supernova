@@ -13,7 +13,7 @@ This repository contains an implementation of the [SuperNova](https://eprint.iac
 - [x] R1CS arithmetization
 - [ ] Vanilla Plonk arithmetization
 - [x] Prover/verifier construction
-- [ ] Tests
+- [x] Tests
 
 ## Disclaimer
 
