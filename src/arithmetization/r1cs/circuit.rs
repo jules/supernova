@@ -1,7 +1,6 @@
 //! A collection of logic and structures for running the SuperNova protocol
 //! with a relaxed committed R1CS arithmetization.
 
-use super::StepCircuit;
 use crate::{commit, Arithmetization};
 use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine};
 use ark_crypto_primitives::sponge::{
@@ -84,6 +83,7 @@ pub struct R1CS {
 
 impl Arithmetization for R1CS {
     type ConstraintSystem = ConstraintSystemRef<Fq>;
+    type Input = FpVar<Fq>;
 
     fn hash(&self) -> Fq {
         self.hash
@@ -136,7 +136,7 @@ impl Arithmetization for R1CS {
         vec![Fq::zero(); self.output().len()]
     }
 
-    fn synthesize<C: StepCircuit<Fq>>(
+    fn synthesize<C: Fn(Self::ConstraintSystem, &[Self::Input]) -> Vec<Self::Input>>(
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
@@ -146,7 +146,7 @@ impl Arithmetization for R1CS {
         i: usize,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
-        circuit: &C,
+        circuit: C,
     ) -> R1CS {
         // TODO: program counter should be calculated in circuit, for now it's just supplied by
         // user
@@ -253,9 +253,7 @@ impl Arithmetization for R1CS {
             })
             .collect::<Vec<FpVar<Fq>>>();
 
-        let output = circuit
-            .generate_constraints(cs.clone(), &new_input)
-            .expect("should be able to synthesize step circuit");
+        let output = circuit(cs.clone(), &new_input);
 
         let hash = FpVar::<_>::new_input(cs.clone(), || {
             Ok(compute_io_hash(
@@ -361,7 +359,12 @@ impl Arithmetization for R1CS {
 
 impl R1CS {
     /// Returns a new R1CS instance-witness pair with the given step circuit.
-    pub fn new<C: StepCircuit<Fq>>(
+    pub fn new<
+        C: Fn(
+            <Self as Arithmetization>::ConstraintSystem,
+            &[<Self as Arithmetization>::Input],
+        ) -> Vec<<Self as Arithmetization>::Input>,
+    >(
         z0: Vec<Fq>,
         c: &C,
         constants: &PoseidonConfig<Fq>,

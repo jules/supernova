@@ -3,7 +3,6 @@
 //! Additionally, includes a model which defines this functionality for R1CS.
 
 pub mod r1cs;
-pub use r1cs::step_circuit::StepCircuit;
 
 use ark_bls12_381::{Fq, G1Affine};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
@@ -11,6 +10,7 @@ use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 /// A foldable circuit representation.
 pub trait Arithmetization {
     type ConstraintSystem;
+    type Input;
 
     // Returns the latest IO hash.
     fn hash(&self) -> Fq;
@@ -41,7 +41,7 @@ pub trait Arithmetization {
     // instance-witness pairs in-circuit and returns a new instance-witness pair representing the
     // invocation.
     #[allow(clippy::too_many_arguments)]
-    fn synthesize<C: StepCircuit<Fq>>(
+    fn synthesize<C: Fn(Self::ConstraintSystem, &[Self::Input]) -> Vec<Self::Input>>(
         &mut self,
         params: Fq,
         latest_witness: G1Affine,
@@ -51,7 +51,7 @@ pub trait Arithmetization {
         i: usize,
         constants: &PoseidonConfig<Fq>,
         generators: &[G1Affine],
-        circuit: &C,
+        circuit: C,
     ) -> Self;
 
     // Performs the folding of the two instance-witness pairs natively. Should only be called after
