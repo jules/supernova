@@ -130,6 +130,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         Ok(())
     }
 
+    // Returns a sum of the parameter hashes of all circuits.
     fn params(&self) -> Fq {
         self.folded
             .iter()
@@ -137,6 +138,8 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             .fold(Fq::zero(), |acc, x| acc + x)
     }
 
+    // Returns a hash of the 'public IO' for verification purposes. This hash should match the hash
+    // created in the augmented step circuit.
     fn hash_public_io(&self) -> Fq {
         // TODO: validate parameters
         let mut sponge = PoseidonSponge::<Fq>::new(&self.constants);

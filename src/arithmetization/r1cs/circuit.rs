@@ -28,8 +28,9 @@ use core::ops::{Add, Mul};
 use rand_core::OsRng;
 use rayon::prelude::*;
 
+// A simplification of the inputs used to create a parameter hash of a circuit.
 #[derive(CanonicalSerialize)]
-pub struct SerializableShape {
+struct SerializableShape {
     num_vars: usize,
     num_public_inputs: usize,
     A: Vec<Vec<Fq>>,
@@ -66,6 +67,7 @@ impl SerializableShape {
     }
 }
 
+/// A representation of the R1CS instance-witness pair.
 #[derive(Clone)]
 pub struct R1CS {
     pub(crate) shape: ConstraintMatrices<Fq>,
@@ -102,8 +104,7 @@ impl Arithmetization for R1CS {
 
     fn is_satisfied(&self, _generators: &[G1Affine]) -> bool {
         // Verify if az * bz = u*cz + E.
-        let z = vec![vec![self.u], self.instance.clone(), self.witness.clone()].concat();
-        let (az, bz, cz) = r1cs_matrix_vec_product(&self.shape.a, &self.shape.b, &self.shape.c, &z);
+        let (az, bz, cz) = self.eval_r1cs();
 
         if (0..self.shape.num_constraints).any(|i| az[i] * bz[i] != self.u * cz[i] + self.E[i]) {
             return false;
@@ -358,6 +359,7 @@ impl Arithmetization for R1CS {
 }
 
 impl R1CS {
+    /// Returns a new R1CS instance-witness pair with the given step circuit.
     pub fn new<C: StepCircuit<Fq>>(
         z0: Vec<Fq>,
         c: &C,
@@ -413,24 +415,10 @@ impl R1CS {
         (r1cs, circuit)
     }
 
+    // Returns T and the commitment to T, which captures some of the relaxed R1CS crossterms.
     fn commit_t(&self, other: &Self, generators: &[G1Affine]) -> (Vec<Fq>, G1Affine) {
-        let (az1, bz1, cz1) = r1cs_matrix_vec_product(
-            &self.shape.a,
-            &self.shape.b,
-            &self.shape.c,
-            &[&[self.u], self.instance.as_slice(), self.witness.as_slice()].concat(),
-        );
-        let (az2, bz2, cz2) = r1cs_matrix_vec_product(
-            &other.shape.a,
-            &other.shape.b,
-            &other.shape.c,
-            &[
-                &[other.u],
-                other.instance.as_slice(),
-                other.witness.as_slice(),
-            ]
-            .concat(),
-        );
+        let (az1, bz1, cz1) = self.eval_r1cs();
+        let (az2, bz2, cz2) = other.eval_r1cs();
 
         let t = az1
             .into_iter()
@@ -455,6 +443,28 @@ impl R1CS {
 
         (t, comm_T)
     }
+
+    // Evaluates the R1CS by multiplying the instance-witness vector with the coefficient matrices.
+    // Returns Az, Bz and Cz, which are used for checking satisfiability of constraint equations.
+    #[allow(clippy::type_complexity)]
+    fn eval_r1cs(&self) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
+        let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
+            m.par_iter()
+                .map(|row| {
+                    row.par_iter()
+                        .fold(Fq::zero, |acc, (coeff, val)| acc + coeff * &z[*val])
+                        .reduce(Fq::zero, |acc, val| acc + val)
+                })
+                .collect::<Vec<Fq>>()
+        };
+
+        let z = vec![vec![self.u], self.instance.clone(), self.witness.clone()].concat();
+        (
+            sparse_matrix_vec_product(&self.shape.a, &z),
+            sparse_matrix_vec_product(&self.shape.b, &z),
+            sparse_matrix_vec_product(&self.shape.c, &z),
+        )
+    }
 }
 
 fn create_circuit(cs: ConstraintSystemRef<Fq>, generators: &[G1Affine], hash: Fq) -> R1CS {
@@ -474,36 +484,6 @@ fn create_circuit(cs: ConstraintSystemRef<Fq>, generators: &[G1Affine], hash: Fq
         hash,
         output: vec![],
     }
-}
-
-#[allow(clippy::type_complexity)]
-fn r1cs_matrix_vec_product(
-    a: &[Vec<(Fq, usize)>],
-    b: &[Vec<(Fq, usize)>],
-    c: &[Vec<(Fq, usize)>],
-    z: &[Fq],
-) -> (Vec<Fq>, Vec<Fq>, Vec<Fq>) {
-    let sparse_matrix_vec_product = |m: &[Vec<(Fq, usize)>], z: &[Fq]| -> Vec<Fq> {
-        m.par_iter()
-            .map(|row| {
-                row.par_iter()
-                    .fold(Fq::zero, |acc, (coeff, val)| acc + coeff * &z[*val])
-                    .reduce(Fq::zero, |acc, val| acc + val)
-            })
-            .collect::<Vec<Fq>>()
-    };
-
-    let (Az, (Bz, Cz)) = rayon::join(
-        || sparse_matrix_vec_product(a, z),
-        || {
-            rayon::join(
-                || sparse_matrix_vec_product(b, z),
-                || sparse_matrix_vec_product(c, z),
-            )
-        },
-    );
-
-    (Az, Bz, Cz)
 }
 
 #[allow(clippy::too_many_arguments)]

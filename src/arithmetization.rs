@@ -37,6 +37,9 @@ pub trait Arithmetization {
     // as many one scalars as there are inputs.
     fn z0(&self) -> Vec<Fq>;
 
+    // Synthesizes a new invocation of the augmented step circuit, which folds the two current
+    // instance-witness pairs in-circuit and returns a new instance-witness pair representing the
+    // invocation.
     #[allow(clippy::too_many_arguments)]
     fn synthesize<C: StepCircuit<Fq>>(
         &mut self,
@@ -51,6 +54,8 @@ pub trait Arithmetization {
         circuit: &C,
     ) -> Self;
 
+    // Performs the folding of the two instance-witness pairs natively. Should only be called after
+    // [`synthesize`].
     fn fold(
         &mut self,
         other: &Self,
