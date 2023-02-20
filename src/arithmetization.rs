@@ -33,9 +33,12 @@ pub trait Arithmetization {
     // Ensures that the arithmetization hasn't been folded yet.
     fn has_crossterms(&self) -> bool;
 
-    // Returns a set of base case inputs. Should in all cases just return
-    // as many one scalars as there are inputs.
+    // Returns a set of base case inputs. Should in all cases just return as many one scalars as
+    // there are inputs.
     fn z0(&self) -> Vec<Fq>;
+
+    // Returns the terms used for calculating the IO hash.
+    fn hash_terms(&self) -> Vec<Fq>;
 
     // Synthesizes a new invocation of the augmented step circuit, which folds the two current
     // instance-witness pairs in-circuit and returns a new instance-witness pair representing the
@@ -44,6 +47,7 @@ pub trait Arithmetization {
     fn synthesize<C: Fn(Self::ConstraintSystem, &[Self::Input]) -> Vec<Self::Input>>(
         &mut self,
         params: Fq,
+        prev_terms: Vec<Fq>,
         latest_witness: G1Affine,
         latest_hash: Fq,
         old_pc: usize,

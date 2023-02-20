@@ -25,6 +25,7 @@ pub struct Proof<A: Arithmetization, const L: usize> {
     generators: Vec<G1Affine>,
     folded: [A; L],
     latest: A,
+    prev_pc: usize,
     pc: usize,
     i: usize,
 }
@@ -49,6 +50,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             generators,
             folded,
             latest,
+            prev_pc: 0,
             pc: 0,
             i: 1,
         }
@@ -63,6 +65,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         // Fold in-circuit to produce new Arithmetization.
         let new_latest = self.folded[self.pc].synthesize(
             self.params(),
+            self.folded[self.prev_pc].hash_terms(),
             self.latest.witness_commitment(),
             self.latest.hash(),
             self.pc,
@@ -80,6 +83,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             self.params(),
         );
         self.latest = new_latest;
+        self.prev_pc = self.pc;
         self.pc = pc;
         self.i += 1;
     }
@@ -152,15 +156,15 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
         .into_iter()
         .chain([Fq::from(self.i as u64)])
         .chain([Fq::from(self.pc as u64)])
-        .chain(self.folded[self.pc].z0())
-        .chain(self.folded[self.pc].output().to_vec())
+        .chain(self.folded[self.prev_pc].z0())
+        .chain(self.folded[self.prev_pc].output().to_vec())
         .chain([
-            self.folded[self.pc].witness_commitment().x,
-            self.folded[self.pc].witness_commitment().y,
-            Fq::from(self.folded[self.pc].witness_commitment().infinity),
+            self.folded[self.prev_pc].witness_commitment().x,
+            self.folded[self.prev_pc].witness_commitment().y,
+            Fq::from(self.folded[self.prev_pc].witness_commitment().infinity),
         ])
-        .chain(self.folded[self.pc].crossterms())
-        .chain([self.folded[self.pc].hash()])
+        .chain(self.folded[self.prev_pc].crossterms())
+        .chain([self.folded[self.prev_pc].hash()])
         .collect::<Vec<Fq>>();
         let naming = vec![
             "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",

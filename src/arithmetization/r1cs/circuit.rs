@@ -136,9 +136,24 @@ impl Arithmetization for R1CS {
         vec![Fq::zero(); self.output().len()]
     }
 
+    fn hash_terms(&self) -> Vec<Fq> {
+        self.z0()
+            .into_iter()
+            .chain(self.output().to_vec())
+            .chain([
+                self.comm_witness.x,
+                self.comm_witness.y,
+                Fq::from(self.comm_witness.infinity),
+            ])
+            .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
+            .chain([self.u, self.hash])
+            .collect::<Vec<Fq>>()
+    }
+
     fn synthesize<C: Fn(Self::ConstraintSystem, &[Self::Input]) -> Vec<Self::Input>>(
         &mut self,
         params: Fq,
+        prev_terms: Vec<Fq>,
         latest_witness: G1Affine,
         latest_hash: Fq,
         old_pc: usize,
@@ -156,22 +171,10 @@ impl Arithmetization for R1CS {
 
         let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
         let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
-        let z0 = self
-            .z0()
+        let prev_terms = prev_terms
             .iter()
             .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
-        let output = self
-            .output()
-            .iter()
-            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
-            .collect::<Vec<_>>();
-        let comm_W =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
-        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
-        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
-        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
-        let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
         let latest_witness =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
         let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
@@ -184,22 +187,17 @@ impl Arithmetization for R1CS {
         let params_select = FpVar::<_>::conditionally_select(&i_is_one, &zero, &params).unwrap();
 
         // Non base case
-        let io_hash = compute_io_hash(
-            constants,
-            &mut cs,
-            &params_select,
-            &i,
-            &old_pc,
-            &z0,
-            &output,
-            &comm_W.to_affine().unwrap(),
-            &comm_E.to_affine().unwrap(),
-            &u,
-            &hash,
-        );
+        let io_hash = compute_io_hash(constants, &mut cs, &params_select, &i, &old_pc, &prev_terms);
 
         let comp_hash = FpVar::<Fq>::conditionally_select(&is_base_case, &zero, &io_hash).unwrap();
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
+
+        let comm_W =
+            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
+        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
+        let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
+        let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
+        let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
 
         // Fold in circuit
         // Compute r
@@ -243,6 +241,17 @@ impl Arithmetization for R1CS {
         let i_new =
             FpVar::<_>::new_witness(cs.clone(), || Ok(i.value().unwrap() + Fq::one())).unwrap();
 
+        let output = self
+            .output()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
+
+        let z0 = self
+            .z0()
+            .iter()
+            .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
+            .collect::<Vec<_>>();
         let new_input = output
             .iter()
             .zip(&z0)
@@ -253,22 +262,20 @@ impl Arithmetization for R1CS {
 
         let output = circuit(cs.clone(), &new_input);
 
+        let terms = z0
+            .into_iter()
+            .chain(output.clone())
+            .chain(W_new.to_affine().unwrap().to_constraint_field().unwrap())
+            .chain(E_new.to_affine().unwrap().to_constraint_field().unwrap())
+            .chain([u_new, hash_new])
+            .collect::<Vec<FpVar<_>>>();
+
         let hash = FpVar::<_>::new_input(cs.clone(), || {
-            Ok(compute_io_hash(
-                constants,
-                &mut cs,
-                &params,
-                &i_new,
-                &new_pc,
-                &z0,
-                &output,
-                &W_new.to_affine().unwrap(),
-                &E_new.to_affine().unwrap(),
-                &u_new,
-                &hash_new,
+            Ok(
+                compute_io_hash(constants, &mut cs, &params, &i_new, &new_pc, &terms)
+                    .value()
+                    .unwrap(),
             )
-            .value()
-            .unwrap())
         })
         .unwrap();
 
@@ -413,6 +420,7 @@ impl R1CS {
         // TODO: check if we need to set pc
         let circuit = r1cs.synthesize(
             Fq::zero(),
+            r1cs.hash_terms(),
             G1Affine::rand(&mut OsRng {}),
             Fq::zero(),
             0,
@@ -491,52 +499,13 @@ fn compute_io_hash(
     params: &FpVar<Fq>,
     i: &FpVar<Fq>,
     pc: &FpVar<Fq>,
-    z0: &[FpVar<Fq>],
-    output: &[FpVar<Fq>],
-    comm_W: &G1AffineVar<Bls12Config>,
-    comm_E: &G1AffineVar<Bls12Config>,
-    u: &FpVar<Fq>,
-    hash: &FpVar<Fq>,
+    prev_terms: &[FpVar<Fq>],
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    println!(
-        "HASHING CIRCUIT WITH \nparams {:?} \ni {:?} \npc {:?} \nz0 {:?} \noutput {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?}\n\n",
-        params.value().unwrap(),
-        i.value().unwrap(),
-        pc.value().unwrap(),
-        z0.iter().map(|v| v.value().unwrap()).collect::<Vec<Fq>>(),
-        output
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_W
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_E
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        u.value().unwrap(),
-        hash.value().unwrap()
-    );
     sponge.absorb(&params).unwrap();
     sponge.absorb(&i).unwrap();
     sponge.absorb(&pc).unwrap();
-    z0.iter().for_each(|v| sponge.absorb(v).unwrap());
-    output.iter().for_each(|v| sponge.absorb(v).unwrap());
-    sponge
-        .absorb(&comm_W.to_constraint_field().unwrap())
-        .unwrap();
-    sponge
-        .absorb(&comm_E.to_constraint_field().unwrap())
-        .unwrap();
-    sponge.absorb(&u).unwrap();
-    sponge.absorb(&hash).unwrap();
+    prev_terms.iter().for_each(|v| sponge.absorb(v).unwrap());
     sponge.squeeze_field_elements(1).unwrap().remove(0)
 }
 
