@@ -314,49 +314,26 @@ impl Arithmetization for R1CS {
         params: Fq,
     ) {
         let mut sponge = PoseidonSponge::<Fq>::new(constants);
-        let terms = [params]
-            .into_iter()
-            .chain([
-                self.comm_witness.x,
-                self.comm_witness.y,
-                Fq::from(self.comm_witness.infinity),
-            ])
-            .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
-            .chain([self.u])
-            .chain([self.hash])
-            .chain([
-                other.comm_witness.x,
-                other.comm_witness.y,
-                Fq::from(other.comm_witness.infinity),
-            ])
-            .chain([other.hash])
-            .chain([self.comm_T.x, self.comm_T.y, Fq::from(self.comm_T.infinity)])
-            .collect::<Vec<Fq>>();
-        let naming = vec![
-            "params",
-            "comm_w",
-            "comm_w",
-            "comm_w",
-            "comm_e",
-            "comm_e",
-            "comm_e",
-            "u",
-            "hash",
-            "latest_witness",
-            "latest_witness",
-            "latest_witness",
-            "latest_hash",
-            "comm_t",
-            "comm_t",
-            "comm_t",
-        ];
-        println!("COMPUTING R NATIVELY AS");
-        terms
-            .iter()
-            .zip(naming)
-            .for_each(|(v, name)| println!("{} {:?}", name, v));
-        println!("\n");
-        sponge.absorb(&terms);
+        sponge.absorb(
+            &[params]
+                .into_iter()
+                .chain([
+                    self.comm_witness.x,
+                    self.comm_witness.y,
+                    Fq::from(self.comm_witness.infinity),
+                ])
+                .chain([self.comm_E.x, self.comm_E.y, Fq::from(self.comm_E.infinity)])
+                .chain([self.u])
+                .chain([self.hash])
+                .chain([
+                    other.comm_witness.x,
+                    other.comm_witness.y,
+                    Fq::from(other.comm_witness.infinity),
+                ])
+                .chain([other.hash])
+                .chain([self.comm_T.x, self.comm_T.y, Fq::from(self.comm_T.infinity)])
+                .collect::<Vec<Fq>>(),
+        );
         let r = sponge.squeeze_native_field_elements(1)[0];
         let (t, comm_T) = self.commit_t(other, generators);
         self.witness
@@ -523,36 +500,6 @@ fn compute_r(
     T: &G1AffineVar<Bls12Config>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
-    println!(
-        "COMPUTING R IN CIRCUIT AS \nparams {:?} \ncomm_w {:?} \ncomm_e {:?} \nu {:?} \nhash {:?} \nlatest_witness {:?} \nlatest_hash {:?} \ncomm_t {:?}\n\n",
-        params.value().unwrap(),
-        comm_W
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        comm_E
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        u.value().unwrap(),
-        hash.value().unwrap(),
-        latest_witness
-            .to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-        latest_hash.value().unwrap(),
-        T.to_constraint_field()
-            .unwrap()
-            .iter()
-            .map(|v| v.value().unwrap())
-            .collect::<Vec<Fq>>(),
-    );
     sponge.absorb(params).unwrap();
     sponge
         .absorb(&comm_W.to_constraint_field().unwrap())

@@ -149,33 +149,25 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     // created in the augmented step circuit.
     fn hash_public_io(&self) -> Fq {
         let mut sponge = PoseidonSponge::<Fq>::new(&self.constants);
-        let terms = [self
-            .folded
-            .iter()
-            .fold(Fq::zero(), |acc, pair| acc + pair.params(&self.constants))]
-        .into_iter()
-        .chain([Fq::from(self.i as u64)])
-        .chain([Fq::from(self.pc as u64)])
-        .chain(self.folded[self.prev_pc].z0())
-        .chain(self.folded[self.prev_pc].output().to_vec())
-        .chain([
-            self.folded[self.prev_pc].witness_commitment().x,
-            self.folded[self.prev_pc].witness_commitment().y,
-            Fq::from(self.folded[self.prev_pc].witness_commitment().infinity),
-        ])
-        .chain(self.folded[self.prev_pc].crossterms())
-        .chain([self.folded[self.prev_pc].hash()])
-        .collect::<Vec<Fq>>();
-        let naming = vec![
-            "params", "i", "pc", "z0", "output", "comm_w", "comm_w", "comm_w", "comm_e", "comm_e",
-            "comm_e", "u", "hash",
-        ];
-        println!("HASHING NATIVE WITH");
-        terms
-            .iter()
-            .zip(naming)
-            .for_each(|(v, name)| println!("{} {:?}", name, v));
-        sponge.absorb(&terms);
+        sponge.absorb(
+            &[self
+                .folded
+                .iter()
+                .fold(Fq::zero(), |acc, pair| acc + pair.params(&self.constants))]
+            .into_iter()
+            .chain([Fq::from(self.i as u64)])
+            .chain([Fq::from(self.pc as u64)])
+            .chain(self.folded[self.prev_pc].z0())
+            .chain(self.folded[self.prev_pc].output().to_vec())
+            .chain([
+                self.folded[self.prev_pc].witness_commitment().x,
+                self.folded[self.prev_pc].witness_commitment().y,
+                Fq::from(self.folded[self.prev_pc].witness_commitment().infinity),
+            ])
+            .chain(self.folded[self.prev_pc].crossterms())
+            .chain([self.folded[self.prev_pc].hash()])
+            .collect::<Vec<Fq>>(),
+        );
         sponge.squeeze_native_field_elements(1)[0]
     }
 }
