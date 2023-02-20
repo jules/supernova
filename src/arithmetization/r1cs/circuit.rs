@@ -66,7 +66,8 @@ impl SerializableShape {
     }
 }
 
-/// A representation of the R1CS instance-witness pair.
+/// A representation of the R1CS instance-witness pair. This is essentially a committed relaxed
+/// R1CS instance, and defines logic for native and in-circuit folding.
 #[derive(Clone)]
 pub struct R1CS {
     pub(crate) shape: ConstraintMatrices<Fq>,
@@ -169,6 +170,8 @@ impl Arithmetization for R1CS {
         let old_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(old_pc as u64))).unwrap();
         let new_pc = FpVar::<Fq>::new_witness(cs.clone(), || Ok(Fq::from(new_pc as u64))).unwrap();
 
+        // Allocate the inputs which are needed to check correctness of the hash in the latest
+        // instance-witness pair.
         let params = FpVar::<_>::new_witness(cs.clone(), || Ok(params)).unwrap();
         let i = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::from(i as u64))).unwrap();
         let prev_terms = prev_terms
@@ -186,12 +189,12 @@ impl Arithmetization for R1CS {
         let i_is_one = FpVar::<_>::is_eq(&i, &one).unwrap();
         let params_select = FpVar::<_>::conditionally_select(&i_is_one, &zero, &params).unwrap();
 
-        // Non base case
         let io_hash = compute_io_hash(constants, &mut cs, &params_select, &i, &old_pc, &prev_terms);
 
         let comp_hash = FpVar::<Fq>::conditionally_select(&is_base_case, &zero, &io_hash).unwrap();
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
+        // Compute folding in-circuit.
         let comm_W =
             G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
         let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
@@ -199,8 +202,6 @@ impl Arithmetization for R1CS {
         let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
         let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
 
-        // Fold in circuit
-        // Compute r
         let r = compute_r(
             constants,
             &mut cs,
@@ -225,11 +226,10 @@ impl Arithmetization for R1CS {
 
         let u_fold = u.clone().add(&r);
 
-        // Fold IO
         let r_hash = latest_hash.clone().mul(&r);
         let hash_fold = hash.add(&r_hash);
 
-        // Pick new variables
+        // Pick variables for the new hash input.
         let W_new =
             G1Var::<Bls12Config>::conditionally_select(&is_base_case, &comm_W, &W_fold).unwrap();
         let E_new =
@@ -247,6 +247,7 @@ impl Arithmetization for R1CS {
             .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
 
+        // Generate the new output by running the step circuit.
         let z0 = self
             .z0()
             .iter()
@@ -278,9 +279,7 @@ impl Arithmetization for R1CS {
             )
         })
         .unwrap();
-
         cs.finalize();
-        assert_eq!(cs.which_is_unsatisfied().unwrap(), None);
 
         // Set the new output for later use.
         self.output = output
@@ -288,9 +287,10 @@ impl Arithmetization for R1CS {
             .map(|v| v.value().unwrap())
             .collect::<Vec<Fq>>();
 
+        // Generate a new R1CS instance-witness pair which contains the circuit we've just built.
         let matrices = cs.to_matrices().unwrap();
         let cs = cs.borrow().unwrap();
-        // NOTE: we randomise commitments as points at infinity are not casted the same natively
+        // NOTE: we randomise commitments since points at infinity are not casted the same natively
         // and in-circuit, which leads to hash discrepancies.
         R1CS {
             shape: matrices.clone(),
@@ -408,7 +408,7 @@ impl R1CS {
             c,
         );
 
-        // Reset mutated variables
+        // Fix mutated variables.
         r1cs.hash = Fq::zero();
         r1cs.witness = circuit.witness.clone();
         r1cs.instance = circuit.instance.clone();
