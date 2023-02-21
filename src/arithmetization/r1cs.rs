@@ -2,7 +2,7 @@
 //! with a relaxed committed R1CS arithmetization.
 
 use crate::{commit, Arithmetization};
-use ark_bls12_381::{Config as Bls12Config, Fq, G1Affine};
+use ark_bls12_381::{Config, Fq, G1Affine};
 use ark_crypto_primitives::sponge::{
     constraints::CryptographicSpongeVar,
     poseidon::{constraints::PoseidonSpongeVar, PoseidonConfig, PoseidonSponge},
@@ -180,7 +180,7 @@ impl Arithmetization for R1CS {
             .map(|v| FpVar::<_>::new_witness(cs.clone(), || Ok(v)).unwrap())
             .collect::<Vec<_>>();
         let latest_witness =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
+            G1Var::<Config>::new_witness(cs.clone(), || Ok(latest_witness)).unwrap();
         let latest_hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(latest_hash)).unwrap();
 
         let zero = FpVar::<_>::new_witness(cs.clone(), || Ok(Fq::zero())).unwrap();
@@ -196,12 +196,11 @@ impl Arithmetization for R1CS {
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
         // Compute folding in-circuit.
-        let comm_W =
-            G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
-        let comm_E = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
+        let comm_W = G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
+        let comm_E = G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
         let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
         let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
-        let T = G1Var::<Bls12Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
+        let T = G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_T)).unwrap();
 
         let r = compute_r(
             constants,
@@ -231,10 +230,8 @@ impl Arithmetization for R1CS {
         let hash_fold = hash.add(&r_hash);
 
         // Pick variables for the new hash input.
-        let W_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &comm_W, &W_fold).unwrap();
-        let E_new =
-            G1Var::<Bls12Config>::conditionally_select(&is_base_case, &comm_E, &E_fold).unwrap();
+        let W_new = G1Var::<Config>::conditionally_select(&is_base_case, &comm_W, &W_fold).unwrap();
+        let E_new = G1Var::<Config>::conditionally_select(&is_base_case, &comm_E, &E_fold).unwrap();
         let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u, &u_fold).unwrap();
         let hash_new =
             FpVar::<_>::conditionally_select(&is_base_case, &latest_hash, &hash_fold).unwrap();
@@ -497,13 +494,13 @@ fn compute_r(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
     params: &FpVar<Fq>,
-    comm_W: &G1AffineVar<Bls12Config>,
-    comm_E: &G1AffineVar<Bls12Config>,
+    comm_W: &G1AffineVar<Config>,
+    comm_E: &G1AffineVar<Config>,
     u: &FpVar<Fq>,
     hash: &FpVar<Fq>,
-    latest_witness: &G1AffineVar<Bls12Config>,
+    latest_witness: &G1AffineVar<Config>,
     latest_hash: &FpVar<Fq>,
-    T: &G1AffineVar<Bls12Config>,
+    T: &G1AffineVar<Config>,
 ) -> FpVar<Fq> {
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
     sponge.absorb(params).unwrap();
