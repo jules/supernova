@@ -141,7 +141,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     fn params(&self) -> Fq {
         self.folded
             .iter()
-            .map(|p| p.params(&self.constants))
+            .map(|p| p.params())
             .fold(Fq::zero(), |acc, x| acc + x)
     }
 
@@ -153,7 +153,7 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
             &[self
                 .folded
                 .iter()
-                .fold(Fq::zero(), |acc, pair| acc + pair.params(&self.constants))]
+                .fold(Fq::zero(), |acc, pair| acc + pair.params())]
             .into_iter()
             .chain([Fq::from(self.i as u64)])
             .chain([Fq::from(self.pc as u64)])

@@ -71,6 +71,7 @@ impl SerializableShape {
 #[derive(Clone)]
 pub struct R1CS {
     pub(crate) shape: ConstraintMatrices<Fq>,
+    pub(crate) param: Fq,
     pub(crate) comm_witness: G1Affine,
     pub(crate) comm_E: G1Affine,
     pub(crate) comm_T: G1Affine,
@@ -125,8 +126,8 @@ impl Arithmetization for R1CS {
         &self.output
     }
 
-    fn params(&self, constants: &PoseidonConfig<Fq>) -> Fq {
-        SerializableShape::from(&self.shape).digest(constants)
+    fn params(&self) -> Fq {
+        self.param
     }
 
     fn has_crossterms(&self) -> bool {
@@ -294,6 +295,7 @@ impl Arithmetization for R1CS {
         // and in-circuit, which leads to hash discrepancies.
         R1CS {
             shape: matrices.clone(),
+            param: self.param,
             comm_witness: commit(generators, &cs.witness_assignment),
             comm_E: G1Affine::rand(&mut OsRng {}),
             comm_T: G1Affine::rand(&mut OsRng {}),
@@ -383,6 +385,7 @@ impl R1CS {
         // and in-circuit, which leads to hash discrepancies.
         let mut r1cs = Self {
             shape: empty_shape,
+            param: Fq::zero(),
             comm_witness: G1Affine::rand(&mut OsRng {}),
             comm_E: G1Affine::rand(&mut OsRng {}),
             comm_T: G1Affine::rand(&mut OsRng {}),
@@ -395,7 +398,7 @@ impl R1CS {
         };
 
         // TODO: check if we need to set pc
-        let circuit = r1cs.synthesize(
+        let mut circuit = r1cs.synthesize(
             Fq::zero(),
             r1cs.hash_terms(),
             G1Affine::rand(&mut OsRng {}),
@@ -413,6 +416,9 @@ impl R1CS {
         r1cs.witness = circuit.witness.clone();
         r1cs.instance = circuit.instance.clone();
         r1cs.E = vec![Fq::zero(); circuit.shape.num_constraints];
+        let param = SerializableShape::from(&circuit.shape).digest(constants);
+        r1cs.param = param;
+        circuit.param = param;
         r1cs.shape = circuit.shape.clone();
         (r1cs, circuit)
     }
