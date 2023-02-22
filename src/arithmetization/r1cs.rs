@@ -196,7 +196,8 @@ impl Arithmetization for R1CS {
         FpVar::<Fq>::enforce_equal(&comp_hash, &latest_hash).unwrap();
 
         // Compute folding in-circuit.
-        let comm_W = G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
+        let comm_witness =
+            G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_witness)).unwrap();
         let comm_E = G1Var::<Config>::new_witness(cs.clone(), || Ok(self.comm_E)).unwrap();
         let u = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.u)).unwrap();
         let hash = FpVar::<Fq>::new_witness(cs.clone(), || Ok(self.hash)).unwrap();
@@ -206,7 +207,7 @@ impl Arithmetization for R1CS {
             constants,
             &mut cs,
             &params,
-            &comm_W.to_affine().unwrap(),
+            &comm_witness.to_affine().unwrap(),
             &comm_E.to_affine().unwrap(),
             &u,
             &hash,
@@ -216,10 +217,10 @@ impl Arithmetization for R1CS {
         );
 
         // NOTE: this is unsatisfiable in arkworks with points at infinity.
-        let rW = latest_witness
+        let r_witness = latest_witness
             .scalar_mul_le(r.to_bits_le().unwrap().iter())
             .unwrap();
-        let W_fold = comm_W.clone().add(&rW);
+        let witness_fold = comm_witness.clone().add(&r_witness);
 
         let rT = T.scalar_mul_le(r.to_bits_le().unwrap().iter()).unwrap();
         let E_fold = comm_E.clone().add(&rT);
@@ -230,7 +231,9 @@ impl Arithmetization for R1CS {
         let hash_fold = hash.add(&r_hash);
 
         // Pick variables for the new hash input.
-        let W_new = G1Var::<Config>::conditionally_select(&is_base_case, &comm_W, &W_fold).unwrap();
+        let witness_new =
+            G1Var::<Config>::conditionally_select(&is_base_case, &comm_witness, &witness_fold)
+                .unwrap();
         let E_new = G1Var::<Config>::conditionally_select(&is_base_case, &comm_E, &E_fold).unwrap();
         let u_new = FpVar::<_>::conditionally_select(&is_base_case, &u, &u_fold).unwrap();
         let hash_new =
@@ -261,10 +264,17 @@ impl Arithmetization for R1CS {
 
         let output = circuit(cs.clone(), &new_input);
 
+        // Compute the hash for the new instance-witness pair.
         let terms = z0
             .into_iter()
             .chain(output.clone())
-            .chain(W_new.to_affine().unwrap().to_constraint_field().unwrap())
+            .chain(
+                witness_new
+                    .to_affine()
+                    .unwrap()
+                    .to_constraint_field()
+                    .unwrap(),
+            )
             .chain(E_new.to_affine().unwrap().to_constraint_field().unwrap())
             .chain([u_new, hash_new])
             .collect::<Vec<FpVar<_>>>();
@@ -378,7 +388,7 @@ impl R1CS {
             c: vec![],
         };
 
-        // NOTE: we randomise commitments as points at infinity are not casted the same natively
+        // NOTE: we randomise commitments since points at infinity are not casted the same natively
         // and in-circuit, which leads to hash discrepancies.
         let mut r1cs = Self {
             shape: empty_shape,
@@ -472,7 +482,6 @@ impl R1CS {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn compute_io_hash(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
@@ -494,7 +503,7 @@ fn compute_r(
     constants: &PoseidonConfig<Fq>,
     cs: &mut ConstraintSystemRef<Fq>,
     params: &FpVar<Fq>,
-    comm_W: &G1AffineVar<Config>,
+    comm_witness: &G1AffineVar<Config>,
     comm_E: &G1AffineVar<Config>,
     u: &FpVar<Fq>,
     hash: &FpVar<Fq>,
@@ -505,7 +514,7 @@ fn compute_r(
     let mut sponge = PoseidonSpongeVar::<Fq>::new(cs.clone(), constants);
     sponge.absorb(params).unwrap();
     sponge
-        .absorb(&comm_W.to_constraint_field().unwrap())
+        .absorb(&comm_witness.to_constraint_field().unwrap())
         .unwrap();
     sponge
         .absorb(&comm_E.to_constraint_field().unwrap())
