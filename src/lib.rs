@@ -34,14 +34,13 @@ impl<A: Arithmetization, const L: usize> Proof<A, L> {
     /// Instantiate a SuperNova proof by giving it the set of circuits
     /// it should track.
     pub fn new(folded: [A; L], latest: A, generators: Vec<G1Affine>) -> Self {
-        // TODO: these parameters might not be optimal/secure for Fq.
         let (ark, mds) =
-            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 43, 0);
         Self {
             constants: PoseidonConfig {
                 full_rounds: 8,
-                partial_rounds: 31,
-                alpha: 17,
+                partial_rounds: 43,
+                alpha: 5,
                 ark,
                 mds,
                 rate: 2,
@@ -213,11 +212,11 @@ mod tests {
         // TODO: can we infer generator size
         let generators = create_generators(30000);
         let (ark, mds) =
-            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 43, 0);
         let constants = PoseidonConfig {
             full_rounds: 8,
-            partial_rounds: 31,
-            alpha: 17,
+            partial_rounds: 43,
+            alpha: 5,
             ark,
             mds,
             rate: 2,
@@ -262,11 +261,11 @@ mod tests {
     fn test_multi_circuit_r1cs() {
         let generators = create_generators(30000);
         let (ark, mds) =
-            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 31, 0);
+            find_poseidon_ark_and_mds(Fq::MODULUS.const_num_bits() as u64, 2, 8, 43, 0);
         let constants = PoseidonConfig {
             full_rounds: 8,
-            partial_rounds: 31,
-            alpha: 17,
+            partial_rounds: 43,
+            alpha: 5,
             ark,
             mds,
             rate: 2,
