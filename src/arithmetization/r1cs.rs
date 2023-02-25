@@ -404,7 +404,6 @@ impl R1CS {
             output: z0,
         };
 
-        // TODO: check if we need to set pc
         let mut circuit = r1cs.synthesize(
             Fq::zero(),
             r1cs.hash_terms(),
